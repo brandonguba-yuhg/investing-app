@@ -4,7 +4,10 @@ import type {
   CashFlowStatement,
   CompanyProfile,
   Financials,
+  History,
+  HistoryRange,
   Multiples,
+  NewsItem,
   Period,
   Quote,
   SearchResult,
@@ -17,6 +20,7 @@ import type {
 interface YfClient {
   search(query: string, opts?: { quotesCount?: number; newsCount?: number }): Promise<{
     quotes: Array<Record<string, unknown>>;
+    news?: Array<Record<string, unknown>>;
   }>;
   quote(symbol: string): Promise<Record<string, unknown>>;
   quoteSummary(symbol: string, opts: { modules: readonly string[] }): Promise<Record<string, unknown>>;
@@ -24,6 +28,13 @@ interface YfClient {
     symbol: string,
     opts: { period1: string; module: string; type: "annual" | "quarterly" | "trailing" },
   ): Promise<Array<Record<string, unknown>>>;
+  chart(
+    symbol: string,
+    opts: { period1: Date | string; period2?: Date | string; interval: string },
+  ): Promise<{
+    meta?: { currency?: string };
+    quotes: Array<{ date: Date | string; close: number | null }>;
+  }>;
 }
 
 const yf = new YahooFinance({ suppressNotices: ["yahooSurvey", "ripHistorical"] }) as unknown as YfClient;
@@ -42,6 +53,17 @@ function dateString(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   if (typeof v === "string") return v.slice(0, 10);
   if (typeof v === "number") return new Date(v * 1000).toISOString().slice(0, 10);
+  return "";
+}
+
+function isoTimestamp(v: unknown): string {
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === "string") return v;
+  if (typeof v === "number") {
+    // Yahoo gives seconds for some fields; treat values < 1e12 as seconds.
+    const ms = v < 1e12 ? v * 1000 : v;
+    return new Date(ms).toISOString();
+  }
   return "";
 }
 
@@ -235,12 +257,94 @@ function mapCash(r: Row, period: Period): CashFlowStatement {
   };
 }
 
+// ---------- news ----------
+
+export async function getNews(symbol: Ticker, limit = 10): Promise<NewsItem[]> {
+  const res = await yf.search(symbol, { newsCount: limit, quotesCount: 0 });
+  const items = res.news ?? [];
+  return items.slice(0, limit).map((n) => {
+    const thumbs = (n.thumbnail as { resolutions?: Array<{ url?: string; width?: number }> } | undefined)
+      ?.resolutions;
+    // Prefer a small (square) thumbnail when available.
+    const thumb = pickThumbnail(thumbs);
+    return {
+      id: String(n.uuid ?? n.link ?? n.title ?? Math.random()),
+      title: String(n.title ?? ""),
+      publisher: String(n.publisher ?? ""),
+      link: String(n.link ?? ""),
+      publishedAt: isoTimestamp(n.providerPublishTime),
+      thumbnail: thumb,
+    };
+  });
+}
+
+function pickThumbnail(
+  resolutions?: Array<{ url?: string; width?: number }>,
+): string | undefined {
+  if (!resolutions || resolutions.length === 0) return undefined;
+  // Pick the smallest resolution >= 140px, else the smallest available.
+  const sorted = [...resolutions].sort(
+    (a, b) => (a.width ?? 9999) - (b.width ?? 9999),
+  );
+  const small = sorted.find((r) => (r.width ?? 0) >= 140) ?? sorted[0];
+  return small.url;
+}
+
+// ---------- history (price chart) ----------
+
+interface RangeSpec {
+  days: number;
+  interval: string;
+}
+
+const RANGES: Record<HistoryRange, RangeSpec> = {
+  "1d": { days: 1, interval: "5m" },
+  "1m": { days: 31, interval: "1d" },
+  "6m": { days: 186, interval: "1d" },
+  "1y": { days: 366, interval: "1d" },
+  "5y": { days: 5 * 366, interval: "1wk" },
+};
+
+export async function getHistory(symbol: Ticker, range: HistoryRange): Promise<History> {
+  const spec = RANGES[range];
+  if (!spec) throw new Error(`Unknown range: ${range}`);
+
+  const period1 = new Date(Date.now() - spec.days * 24 * 60 * 60 * 1000);
+  const res = await yf.chart(symbol, { period1, interval: spec.interval });
+
+  const points = (res.quotes ?? [])
+    .filter((q) => q.close != null && Number.isFinite(q.close))
+    .map((q) => ({
+      date: q.date instanceof Date ? q.date.toISOString() : String(q.date),
+      close: q.close as number,
+    }));
+
+  return {
+    range,
+    points,
+    currency: res.meta?.currency,
+  };
+}
+
 // ---------- multiples ----------
 
 export async function getMultiples(symbol: Ticker): Promise<Multiples> {
-  const summary = await yf.quoteSummary(symbol, {
-    modules: ["defaultKeyStatistics", "summaryDetail", "financialData", "price"],
-  });
+  // Fetch the TTM modules and the latest annual fundamentals in parallel.
+  // The fundamentals give us EBIT, tax rate, invested capital, and (sometimes)
+  // interest expense — fields we use to compute ROIC and Interest Coverage,
+  // neither of which Yahoo exposes as a precomputed TTM ratio.
+  const period1 = new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const [summary, fundamentalsRows] = await Promise.all([
+    yf.quoteSummary(symbol, {
+      modules: ["defaultKeyStatistics", "summaryDetail", "financialData", "price"],
+    }),
+    yf
+      .fundamentalsTimeSeries(symbol, { period1, module: "all", type: "annual" })
+      .catch(() => [] as Array<Record<string, unknown>>),
+  ]);
   const ks = (summary.defaultKeyStatistics ?? {}) as Row;
   const sd = (summary.summaryDetail ?? {}) as Row;
   const fd = (summary.financialData ?? {}) as Row;
@@ -263,6 +367,11 @@ export async function getMultiples(symbol: Ticker): Promise<Multiples> {
   const operatingCashflow = num(fd.operatingCashflow);
   const pocf = marketCap && operatingCashflow && operatingCashflow !== 0 ? marketCap / operatingCashflow : undefined;
   const evToFcf = enterpriseValue && freeCashflow && freeCashflow !== 0 ? enterpriseValue / freeCashflow : undefined;
+
+  // Use the most recent annual record for ROIC + interest coverage.
+  const latestFund = pickLatestAnnual(fundamentalsRows);
+  const roic = computeRoic(latestFund);
+  const interestCoverage = computeInterestCoverage(latestFund);
 
   return {
     marketCap,
@@ -287,7 +396,7 @@ export async function getMultiples(symbol: Ticker): Promise<Multiples> {
     ebitdaMargin: num(fd.ebitdaMargins),
     roa: num(fd.returnOnAssets),
     roe: num(fd.returnOnEquity),
-    roic: undefined, // yahoo doesn't expose ROIC directly
+    roic,
 
     // Yahoo returns debtToEquity as a percentage (e.g. 79.5 = 79.5%);
     // convert to a true ratio to match our formatter.
@@ -297,7 +406,65 @@ export async function getMultiples(symbol: Ticker): Promise<Multiples> {
     })(),
     currentRatio: num(fd.currentRatio),
     quickRatio: num(fd.quickRatio),
-    interestCoverage: undefined,
+    interestCoverage,
     payoutRatio: num(sd.payoutRatio),
   };
+}
+
+function pickLatestAnnual(rows: Array<Record<string, unknown>>): Record<string, unknown> {
+  if (!rows.length) return {};
+  return [...rows].sort((a, b) => {
+    return new Date(b.date as string).getTime() - new Date(a.date as string).getTime();
+  })[0];
+}
+
+/**
+ * ROIC = NOPAT / Invested Capital.
+ * Prefer Yahoo's `investedCapital` and `taxRateForCalcs` when available.
+ * NOPAT = EBIT * (1 - taxRate). Fallback tax rate = taxProvision / pretaxIncome.
+ */
+function computeRoic(r: Record<string, unknown>): number | undefined {
+  const ebit = num(r.EBIT) ?? num(r.operatingIncome);
+  if (!ebit) return undefined;
+
+  let taxRate = num(r.taxRateForCalcs);
+  if (taxRate == null) {
+    const taxProvision = num(r.taxProvision);
+    const pretax = num(r.pretaxIncome);
+    if (taxProvision != null && pretax && pretax !== 0) {
+      taxRate = taxProvision / pretax;
+    }
+  }
+  // Clamp to a sensible range; Yahoo can return weird values around losses.
+  if (taxRate == null || !Number.isFinite(taxRate)) taxRate = 0.21;
+  taxRate = Math.max(0, Math.min(0.5, taxRate));
+
+  const nopat = ebit * (1 - taxRate);
+
+  let investedCapital = num(r.investedCapital);
+  if (!investedCapital) {
+    const equity = num(r.stockholdersEquity) ?? num(r.commonStockEquity);
+    const debt = num(r.totalDebt);
+    if (equity != null && debt != null) investedCapital = equity + debt;
+  }
+  if (!investedCapital || investedCapital === 0) return undefined;
+
+  return nopat / investedCapital;
+}
+
+/**
+ * Interest Coverage = EBIT / |Interest Expense|. Yahoo doesn't always expose
+ * the field directly, so fall back to `interestExpenseNonOperating`.
+ */
+function computeInterestCoverage(r: Record<string, unknown>): number | undefined {
+  const ebit = num(r.EBIT) ?? num(r.operatingIncome);
+  if (!ebit) return undefined;
+  const interest =
+    num(r.interestExpense) ??
+    num(r.interestExpenseNonOperating) ??
+    num(r.netInterestIncome);
+  if (interest == null || interest === 0) return undefined;
+  // Yahoo sometimes reports interest as positive, sometimes negative;
+  // we want a positive coverage ratio either way.
+  return ebit / Math.abs(interest);
 }

@@ -76,6 +76,30 @@ export interface Financials {
   cashFlow: CashFlowStatement[];
 }
 
+export type HistoryRange = "1d" | "1m" | "6m" | "1y" | "5y";
+
+export interface HistoryPoint {
+  /** ISO timestamp; minute-precision for intraday, day for longer ranges. */
+  date: string;
+  close: number;
+}
+
+export interface History {
+  range: HistoryRange;
+  points: HistoryPoint[];
+  currency?: string;
+}
+
+export interface NewsItem {
+  id: string;
+  title: string;
+  publisher: string;
+  link: string;
+  /** ISO timestamp. */
+  publishedAt: string;
+  thumbnail?: string;
+}
+
 export interface Multiples {
   marketCap?: number;
   enterpriseValue?: number;

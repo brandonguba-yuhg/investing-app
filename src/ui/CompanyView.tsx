@@ -14,6 +14,10 @@ import type {
 } from "../core/types";
 import { CompanyCharts } from "./CompanyCharts";
 import { CompanyMultiples } from "./CompanyMultiples";
+// Vaulted: notes feature kept on disk but not wired into the UI.
+// import { CompanyNotes } from "./CompanyNotes";
+import { NewsFeed } from "./NewsFeed";
+import { PriceChart } from "./PriceChart";
 import { useProvider } from "./providerContext";
 import { useWatchlist } from "./useWatchlist";
 
@@ -35,28 +39,32 @@ export function CompanyView({ symbol }: Props) {
   const [statement, setStatement] = useState<Statement>("income");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [multiplesLoading, setMultiplesLoading] = useState(false);
+  const [multiplesError, setMultiplesError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const watchlist = useWatchlist();
 
+  // Primary load: profile + quote + financials. Multiples is lazy (below).
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setMultiples(null);
+    setMultiplesError(null);
     Promise.all([
       provider.getProfile(symbol),
       provider.getQuote(symbol),
       provider.getFinancials(symbol, period, 5),
-      provider.getMultiples(symbol).catch(() => null),
     ])
-      .then(([p, q, f, m]) => {
+      .then(([p, q, f]) => {
         if (cancelled) return;
         setProfile(p);
         setQuote(q);
         setFinancials(f);
-        setMultiples(m);
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : "Failed to load");
+        setError(toErrorMessage(e, symbol));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -64,10 +72,49 @@ export function CompanyView({ symbol }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [symbol, period, provider]);
+  }, [symbol, period, provider, retryKey]);
+
+  // Lazy: fetch multiples only when the user opens that tab.
+  // We only gate on whether we already have data — strict-mode double-mount is
+  // handled by the `cancelled` flag so stale fetches don't setState.
+  useEffect(() => {
+    if (view !== "multiples" || multiples) return;
+    let cancelled = false;
+    setMultiplesLoading(true);
+    setMultiplesError(null);
+    provider
+      .getMultiples(symbol)
+      .then((m) => {
+        if (!cancelled) {
+          setMultiples(m);
+          setMultiplesLoading(false);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setMultiplesError(toErrorMessage(e, symbol));
+          setMultiplesLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [view, symbol, provider, multiples]);
 
   if (loading) return <div className="loading">Loading {symbol}…</div>;
-  if (error) return <div className="error">Error: {error}</div>;
+  if (error) {
+    return (
+      <div className="error-block">
+        <p>{error}</p>
+        <button
+          className="retry-btn"
+          onClick={() => setRetryKey((k) => k + 1)}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (!profile || !quote || !financials) return null;
 
   const currency = profile.currency ?? "USD";
@@ -127,6 +174,8 @@ export function CompanyView({ symbol }: Props) {
 
       {view === "overview" ? (
         <>
+          <PriceChart symbol={profile.symbol} currency={currency} />
+
           <section className="stats">
             <Stat label="Market Cap" value={formatLargeNumber(quote.marketCap)} />
             <Stat label="P/E" value={pe ? pe.toFixed(2) : "—"} />
@@ -137,10 +186,22 @@ export function CompanyView({ symbol }: Props) {
           </section>
 
           {profile.description && (
-            <section className="description">
-              <p>{profile.description}</p>
-            </section>
+            <details className="collapsible">
+              <summary>
+                <span className="collapsible-title">About {profile.name}</span>
+                <span className="collapsible-icon" aria-hidden>▾</span>
+              </summary>
+              <div className="collapsible-body description-body">
+                <p>{profile.description}</p>
+              </div>
+            </details>
           )}
+
+          <NewsFeed symbol={profile.symbol} />
+
+          {/* Notes vaulted — re-enable by uncommenting:
+              {saved && <CompanyNotes symbol={profile.symbol} />}
+          */}
 
           <section className="financials">
             <div className="financials-controls">
@@ -166,11 +227,40 @@ export function CompanyView({ symbol }: Props) {
         </>
       ) : multiples ? (
         <CompanyMultiples multiples={multiples} />
+      ) : multiplesLoading ? (
+        <div className="loading">Loading multiples…</div>
+      ) : multiplesError ? (
+        <div className="error-block">
+          <p>{multiplesError}</p>
+          <button
+            className="retry-btn"
+            onClick={() => {
+              setMultiples(null);
+              setMultiplesError(null);
+            }}
+          >
+            Try again
+          </button>
+        </div>
       ) : (
         <div className="loading">Multiples unavailable for {symbol}</div>
       )}
     </div>
   );
+}
+
+function toErrorMessage(e: unknown, symbol: string): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  if (/404|not found|no .* for/i.test(raw)) {
+    return `Couldn't find data for "${symbol}". Check the ticker symbol.`;
+  }
+  if (/failed to fetch|networkerror|load failed/i.test(raw)) {
+    return "Couldn't reach the backend. Check that the server is running.";
+  }
+  if (/429|rate limit/i.test(raw)) {
+    return "Rate limited by the data source. Wait a moment and try again.";
+  }
+  return raw || "Something went wrong loading this company.";
 }
 
 function PeriodToggle({ period, onChange }: { period: Period; onChange: (p: Period) => void }) {

@@ -85,6 +85,38 @@ app.get("/api/financials/:symbol", async (req, res, next) => {
   }
 });
 
+app.get("/api/news/:symbol", async (req, res, next) => {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+    const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
+    const out = await cache.wrap(`news:${symbol}:${limit}`, TTL.news, () =>
+      yahoo.getNews(symbol, limit),
+    );
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.get("/api/history/:symbol", async (req, res, next) => {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+    const rangeRaw = String(req.query.range ?? "1y").toLowerCase();
+    const validRanges = ["1d", "1m", "6m", "1y", "5y"] as const;
+    type Range = (typeof validRanges)[number];
+    const range = (validRanges as readonly string[]).includes(rangeRaw)
+      ? (rangeRaw as Range)
+      : ("1y" as Range);
+    const ttl = range === "1d" ? TTL.historyIntraday : TTL.historyDaily;
+    const out = await cache.wrap(`hist:${symbol}:${range}`, ttl, () =>
+      yahoo.getHistory(symbol, range),
+    );
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
 app.get("/api/multiples/:symbol", async (req, res, next) => {
   try {
     const symbol = req.params.symbol.toUpperCase();

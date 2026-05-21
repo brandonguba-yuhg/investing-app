@@ -42,4 +42,7 @@ export const TTL = {
   profile: 24 * 60 * 60 * 1000,  // 24 hours — company info
   financials: 24 * 60 * 60 * 1000, // 24 hours — quarterly filings
   multiples: 60 * 60 * 1000,     // 1 hour — TTM ratios shift slowly
+  historyIntraday: 60 * 1000,    // 1 minute — 1d range with 5-min bars
+  historyDaily: 60 * 60 * 1000,  // 1 hour — bars dated daily/weekly
+  news: 10 * 60 * 1000,          // 10 minutes — news flow but not real-time
 } as const;

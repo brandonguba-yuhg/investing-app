@@ -1,7 +1,10 @@
 import type {
   CompanyProfile,
   Financials,
+  History,
+  HistoryRange,
   Multiples,
+  NewsItem,
   Period,
   Quote,
   SearchResult,
@@ -14,6 +17,8 @@ export interface FinancialDataProvider {
   getQuote(symbol: Ticker): Promise<Quote>;
   getFinancials(symbol: Ticker, period: Period, limit?: number): Promise<Financials>;
   getMultiples(symbol: Ticker): Promise<Multiples>;
+  getHistory(symbol: Ticker, range: HistoryRange): Promise<History>;
+  getNews(symbol: Ticker, limit?: number): Promise<NewsItem[]>;
 }
 
 export class ProviderError extends Error {

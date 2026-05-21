@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { formatLargeNumber } from "../core/format";
 import type { Financials, Period } from "../core/types";
+import { useTheme } from "./useTheme";
 
 interface Props {
   financials: Financials;
@@ -18,6 +19,16 @@ interface Props {
 }
 
 export function CompanyCharts({ financials, period }: Props) {
+  const { tokens } = useTheme();
+  const tooltipStyle = {
+    background: tokens.surface,
+    border: `1px solid ${tokens.border}`,
+    borderRadius: "6px",
+    fontSize: "12px",
+    color: tokens.text,
+  };
+  const cursorFill =
+    tokens.bg === "#0f1115" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)";
   const incomeData = [...financials.income]
     .reverse()
     .map((r) => ({
@@ -53,13 +64,13 @@ export function CompanyCharts({ financials, period }: Props) {
       <ChartCard title={`Revenue, Operating Income & Net Income (${subtitle})`}>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={incomeData} margin={{ top: 16, right: 16, bottom: 4, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a2f3a" />
-            <XAxis dataKey="label" stroke="#8a93a6" fontSize={12} />
-            <YAxis stroke="#8a93a6" fontSize={12} tickFormatter={formatLargeNumber} />
+            <CartesianGrid strokeDasharray="3 3" stroke={tokens.border} />
+            <XAxis dataKey="label" stroke={tokens.muted} fontSize={12} />
+            <YAxis stroke={tokens.muted} fontSize={12} tickFormatter={formatLargeNumber} />
             <Tooltip
               contentStyle={tooltipStyle}
               formatter={(v: number) => formatLargeNumber(v)}
-              cursor={{ fill: "rgba(255,255,255,0.04)" }}
+              cursor={{ fill: cursorFill }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar dataKey="Revenue" fill="#5b8def" />
@@ -72,13 +83,13 @@ export function CompanyCharts({ financials, period }: Props) {
       <ChartCard title={`Balance Sheet (${subtitle})`}>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={balanceData} margin={{ top: 16, right: 16, bottom: 4, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a2f3a" />
-            <XAxis dataKey="label" stroke="#8a93a6" fontSize={12} />
-            <YAxis stroke="#8a93a6" fontSize={12} tickFormatter={formatLargeNumber} />
+            <CartesianGrid strokeDasharray="3 3" stroke={tokens.border} />
+            <XAxis dataKey="label" stroke={tokens.muted} fontSize={12} />
+            <YAxis stroke={tokens.muted} fontSize={12} tickFormatter={formatLargeNumber} />
             <Tooltip
               contentStyle={tooltipStyle}
               formatter={(v: number) => formatLargeNumber(v)}
-              cursor={{ fill: "rgba(255,255,255,0.04)" }}
+              cursor={{ fill: cursorFill }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar dataKey="Assets" fill="#5b8def" />
@@ -91,13 +102,13 @@ export function CompanyCharts({ financials, period }: Props) {
       <ChartCard title={`Cash Flow (${subtitle})`}>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={cashData} margin={{ top: 16, right: 16, bottom: 4, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a2f3a" />
-            <XAxis dataKey="label" stroke="#8a93a6" fontSize={12} />
-            <YAxis stroke="#8a93a6" fontSize={12} tickFormatter={formatLargeNumber} />
+            <CartesianGrid strokeDasharray="3 3" stroke={tokens.border} />
+            <XAxis dataKey="label" stroke={tokens.muted} fontSize={12} />
+            <YAxis stroke={tokens.muted} fontSize={12} tickFormatter={formatLargeNumber} />
             <Tooltip
               contentStyle={tooltipStyle}
               formatter={(v: number) => formatLargeNumber(v)}
-              cursor={{ fill: "rgba(255,255,255,0.04)" }}
+              cursor={{ fill: cursorFill }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar dataKey="Operating" fill="#22c55e" />
@@ -132,9 +143,3 @@ function shortDate(iso: string): string {
   return `${month} ${year}`;
 }
 
-const tooltipStyle = {
-  background: "#181b22",
-  border: "1px solid #2a2f3a",
-  borderRadius: "6px",
-  fontSize: "12px",
-};

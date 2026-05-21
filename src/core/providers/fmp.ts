@@ -4,8 +4,11 @@ import type {
   CashFlowStatement,
   CompanyProfile,
   Financials,
+  History,
+  HistoryRange,
   IncomeStatement,
   Multiples,
+  NewsItem,
   Period,
   Quote,
   SearchResult,
@@ -138,6 +141,18 @@ export class FmpProvider implements FinancialDataProvider {
       volume: q.volume,
       marketCap: q.marketCap,
     };
+  }
+
+  async getHistory(_symbol: Ticker, _range: HistoryRange): Promise<History> {
+    throw new ProviderError(
+      "Price history is not implemented for the FMP provider. Use the backend (HttpProvider) for charts.",
+      501,
+    );
+  }
+
+  async getNews(_symbol: Ticker, _limit?: number): Promise<NewsItem[]> {
+    // Not exposed on FMP free tier; degrade silently.
+    return [];
   }
 
   async getMultiples(symbol: Ticker): Promise<Multiples> {

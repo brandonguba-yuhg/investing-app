@@ -4,11 +4,13 @@ import { FmpProvider } from "./core/providers/fmp";
 import { HttpProvider } from "./core/providers/http";
 import type { FinancialDataProvider } from "./core/provider";
 import { CompanyView } from "./ui/CompanyView";
+import { CompareView } from "./ui/CompareView";
 import { Dashboard } from "./ui/Dashboard";
 import { ProviderContext } from "./ui/providerContext";
 import { SearchBar } from "./ui/SearchBar";
+import { useTheme } from "./ui/useTheme";
 
-type Page = "home" | "dashboard";
+type Page = "home" | "dashboard" | "compare";
 
 function App() {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
@@ -22,6 +24,7 @@ function App() {
 
   const [page, setPage] = useState<Page>("home");
   const [symbol, setSymbol] = useState<string | null>(null);
+  const { mode: themeMode, toggle: toggleTheme } = useTheme();
 
   if (!provider) {
     return (
@@ -69,8 +72,22 @@ function App() {
             >
               Dashboard
             </button>
+            <button
+              className={page === "compare" ? "page-link on" : "page-link"}
+              onClick={() => setPage("compare")}
+            >
+              Compare
+            </button>
           </nav>
           {page === "home" && <SearchBar onSelect={openCompany} />}
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            title={`Switch to ${themeMode === "dark" ? "light" : "dark"} theme`}
+            aria-label="Toggle theme"
+          >
+            {themeMode === "dark" ? "☀" : "☾"}
+          </button>
         </header>
         <main className="app-main">
           {page === "home" ? (
@@ -82,8 +99,10 @@ function App() {
                 <p className="hint">Try: AAPL, MSFT, GOOGL, Tesla, Amazon</p>
               </div>
             )
-          ) : (
+          ) : page === "dashboard" ? (
             <Dashboard onSelect={openCompany} />
+          ) : (
+            <CompareView />
           )}
         </main>
       </div>

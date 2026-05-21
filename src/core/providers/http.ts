@@ -2,7 +2,10 @@ import { ProviderError, type FinancialDataProvider } from "../provider";
 import type {
   CompanyProfile,
   Financials,
+  History,
+  HistoryRange,
   Multiples,
+  NewsItem,
   Period,
   Quote,
   SearchResult,
@@ -59,5 +62,17 @@ export class HttpProvider implements FinancialDataProvider {
 
   getMultiples(symbol: Ticker): Promise<Multiples> {
     return this.get<Multiples>(`/api/multiples/${encodeURIComponent(symbol)}`);
+  }
+
+  getHistory(symbol: Ticker, range: HistoryRange): Promise<History> {
+    return this.get<History>(
+      `/api/history/${encodeURIComponent(symbol)}?range=${range}`,
+    );
+  }
+
+  getNews(symbol: Ticker, limit = 10): Promise<NewsItem[]> {
+    return this.get<NewsItem[]>(
+      `/api/news/${encodeURIComponent(symbol)}?limit=${limit}`,
+    );
   }
 }
