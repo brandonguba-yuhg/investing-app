@@ -4,7 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "dist",
-    "rootDir": "..",
+    "rootDir": "src",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
@@ -13,5 +13,5 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["src/**/*", "../src/core/types.ts"]
+  "include": ["src/**/*"]
 }

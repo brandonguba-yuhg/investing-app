@@ -1,3 +1,7 @@
+// ⚠️ Keep in sync with ../../server/src/types.ts (backend copy).
+// The backend can't import this file directly because Railway builds it with
+// the build context limited to server/, so the two are kept as mirror copies.
+
 export type Ticker = string;
 
 export interface SearchResult {

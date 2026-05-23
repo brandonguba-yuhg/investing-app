@@ -12,7 +12,7 @@ import type {
   Quote,
   SearchResult,
   Ticker,
-} from "../../src/core/types.js";
+} from "./types.js";
 
 // v3 default export is the YahooFinance class; instantiate to use modules.
 // The library's TypeScript types are strict and don't match the loose shapes
