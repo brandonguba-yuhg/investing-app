@@ -135,7 +135,7 @@ export function PriceChart({ symbol, currency = "USD" }: Props) {
                   color: tokens.text,
                 }}
                 labelFormatter={(d) => formatTooltipLabel(d as string, range)}
-                formatter={(v: number) => [formatCurrency(v, cur), "Close"]}
+                formatter={(v) => [formatCurrency(Number(v), cur), "Close"]}
                 cursor={{ stroke: tokens.muted, strokeWidth: 1 }}
               />
               <Area

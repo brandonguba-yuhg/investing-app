@@ -94,7 +94,11 @@ export function useTheme(): {
   /** Drop the explicit override and follow the OS again. */
   resetToOS: () => void;
 } {
-  const mode = useSyncExternalStore(subscribe, () => currentMode, () => "dark");
+  const mode = useSyncExternalStore<ThemeMode>(
+    subscribe,
+    () => currentMode,
+    () => "dark",
+  );
   const setModeCb = useCallback((m: ThemeMode) => setMode(m), []);
   const toggle = useCallback(() => setMode(currentMode === "dark" ? "light" : "dark"), []);
   const resetToOS = useCallback(() => clearOverride(), []);

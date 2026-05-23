@@ -69,7 +69,7 @@ export function CompanyCharts({ financials, period }: Props) {
             <YAxis stroke={tokens.muted} fontSize={12} tickFormatter={formatLargeNumber} />
             <Tooltip
               contentStyle={tooltipStyle}
-              formatter={(v: number) => formatLargeNumber(v)}
+              formatter={(v) => formatLargeNumber(Number(v))}
               cursor={{ fill: cursorFill }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -88,7 +88,7 @@ export function CompanyCharts({ financials, period }: Props) {
             <YAxis stroke={tokens.muted} fontSize={12} tickFormatter={formatLargeNumber} />
             <Tooltip
               contentStyle={tooltipStyle}
-              formatter={(v: number) => formatLargeNumber(v)}
+              formatter={(v) => formatLargeNumber(Number(v))}
               cursor={{ fill: cursorFill }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -107,7 +107,7 @@ export function CompanyCharts({ financials, period }: Props) {
             <YAxis stroke={tokens.muted} fontSize={12} tickFormatter={formatLargeNumber} />
             <Tooltip
               contentStyle={tooltipStyle}
-              formatter={(v: number) => formatLargeNumber(v)}
+              formatter={(v) => formatLargeNumber(Number(v))}
               cursor={{ fill: cursorFill }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />

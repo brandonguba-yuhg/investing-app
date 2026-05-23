@@ -26,8 +26,10 @@ interface CompareData {
 }
 
 interface RowDef {
-  label: string;
-  get: (d: CompareData) => string;
+  /** Metric label (omitted for section-heading rows). */
+  label?: string;
+  /** Cell value getter (omitted for section-heading rows). */
+  get?: (d: CompareData) => string;
   /** Higher is better (green), lower is red. Inverted for "low is better" metrics. */
   highlight?: "higher-better" | "lower-better";
   /** Numeric extractor for highlight comparison. */
@@ -375,7 +377,7 @@ function CompareTable({
                         : "metric-cell";
                   return (
                     <td key={c.symbol} className={cls}>
-                      {c.loading && !c.quote ? "…" : row.get(c)}
+                      {c.loading && !c.quote ? "…" : row.get?.(c)}
                     </td>
                   );
                 })}
