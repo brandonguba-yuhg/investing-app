@@ -11,7 +11,7 @@ import { ProviderContext } from "./ui/providerContext";
 import { SearchBar } from "./ui/SearchBar";
 import { useTheme } from "./ui/useTheme";
 
-type Page = "home" | "dashboard" | "compare";
+type Page = "home" | "lookup" | "dashboard" | "compare";
 
 function App() {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
@@ -52,7 +52,7 @@ function App() {
 
   const openCompany = (s: string) => {
     setSymbol(s);
-    setPage("home");
+    setPage("lookup");
   };
 
   return (
@@ -68,6 +68,12 @@ function App() {
               Home
             </button>
             <button
+              className={page === "lookup" ? "page-link on" : "page-link"}
+              onClick={() => setPage("lookup")}
+            >
+              Lookup
+            </button>
+            <button
               className={page === "dashboard" ? "page-link on" : "page-link"}
               onClick={() => setPage("dashboard")}
             >
@@ -80,7 +86,9 @@ function App() {
               Compare
             </button>
           </nav>
-          {page === "home" && <SearchBar onSelect={openCompany} />}
+          {(page === "home" || page === "lookup") && (
+            <SearchBar onSelect={openCompany} />
+          )}
           <button
             className="theme-toggle"
             onClick={toggleTheme}
@@ -92,17 +100,22 @@ function App() {
         </header>
         <main className="app-main">
           {page === "home" ? (
+            <MarketBriefing
+              fallback={
+                <div className="empty">
+                  <p>Use the search bar or the Lookup tab to explore a company.</p>
+                  <p className="hint">The daily market briefing appears here once configured.</p>
+                </div>
+              }
+            />
+          ) : page === "lookup" ? (
             symbol ? (
               <CompanyView key={symbol} symbol={symbol} />
             ) : (
-              <MarketBriefing
-                fallback={
-                  <div className="empty">
-                    <p>Search for a company by name or ticker symbol to get started.</p>
-                    <p className="hint">Try: AAPL, MSFT, GOOGL, Tesla, Amazon</p>
-                  </div>
-                }
-              />
+              <div className="empty">
+                <p>Search for a company by name or ticker symbol.</p>
+                <p className="hint">Try: AAPL, MSFT, GOOGL, Tesla, Amazon</p>
+              </div>
             )
           ) : page === "dashboard" ? (
             <Dashboard onSelect={openCompany} />
