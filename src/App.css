@@ -1412,6 +1412,152 @@ body, html, #root {
 .altman-table .num { text-align: right; }
 .altman-table .contrib { color: var(--text); font-weight: 500; width: 64px; }
 
+/* DCF / Fair value */
+.analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.val-verdict-tag {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.val-note,
+.val-warning {
+  font-size: 12px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.val-note {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.val-warning {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--down);
+}
+
+.val-result {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.val-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.val-fair-num {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.val-price-num {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.val-updown {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.val-updown.up { color: var(--up); }
+.val-updown.down { color: var(--down); }
+
+.val-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.val-slider-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.val-slider-value {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.val-slider-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.val-num-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.val-num-input:focus { border-color: var(--accent); }
+
+.val-breakdown {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.val-breakdown > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  list-style: none;
+}
+
+.val-breakdown > summary::-webkit-details-marker { display: none; }
+.val-breakdown > summary:hover { color: var(--text); }
+
+.val-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.val-table td {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.val-table tr:last-child td { border-bottom: none; }
+.val-table .row-label { color: var(--muted); }
+.val-table .num { text-align: right; font-weight: 500; }
+
+.val-fineprint {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.8;
+  margin: 10px 0 0;
+  line-height: 1.4;
+}
+
 /* ---------- mobile pass ---------- */
 @media (max-width: 720px) {
   .app {
@@ -1490,6 +1636,15 @@ body, html, #root {
 
   .multi-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .val-result {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .score-grid {
+    grid-template-columns: 1fr;
   }
 
   .price-chart-header {

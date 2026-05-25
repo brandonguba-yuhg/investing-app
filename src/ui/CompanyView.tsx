@@ -16,6 +16,7 @@ import type {
 import { CompanyCharts } from "./CompanyCharts";
 import { CompanyMultiples } from "./CompanyMultiples";
 import { CompanyScores } from "./CompanyScores";
+import { CompanyValuation } from "./CompanyValuation";
 // Vaulted: notes feature kept on disk but not wired into the UI.
 // import { CompanyNotes } from "./CompanyNotes";
 import { NewsFeed } from "./NewsFeed";
@@ -286,26 +287,28 @@ export function CompanyView({ symbol }: Props) {
         )
       ) : (
         // view === "analysis"
-        scores ? (
-          <CompanyScores scores={scores} />
-        ) : scoresLoading ? (
-          <div className="loading">Crunching the numbers…</div>
-        ) : scoresError ? (
-          <div className="error-block">
-            <p>{scoresError}</p>
-            <button
-              className="retry-btn"
-              onClick={() => {
-                setScores(null);
-                setScoresError(null);
-              }}
-            >
-              Try again
-            </button>
-          </div>
-        ) : (
-          <div className="loading">Scores unavailable for {symbol}</div>
-        )
+        <div className="analysis">
+          {scores ? (
+            <CompanyScores scores={scores} />
+          ) : scoresLoading ? (
+            <div className="loading">Crunching the numbers…</div>
+          ) : scoresError ? (
+            <div className="error-block">
+              <p>{scoresError}</p>
+              <button
+                className="retry-btn"
+                onClick={() => {
+                  setScores(null);
+                  setScoresError(null);
+                }}
+              >
+                Try again
+              </button>
+            </div>
+          ) : null}
+
+          <CompanyValuation financials={financials} quote={quote} />
+        </div>
       )}
     </div>
   );
