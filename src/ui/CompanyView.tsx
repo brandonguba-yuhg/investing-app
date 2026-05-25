@@ -13,6 +13,7 @@ import type {
   QualityScores,
   Quote,
 } from "../core/types";
+import { CompanyAI } from "./CompanyAI";
 import { CompanyCharts } from "./CompanyCharts";
 import { CompanyMultiples } from "./CompanyMultiples";
 import { CompanyScores } from "./CompanyScores";
@@ -288,6 +289,8 @@ export function CompanyView({ symbol }: Props) {
       ) : (
         // view === "analysis"
         <div className="analysis">
+          <CompanyAI symbol={profile.symbol} />
+
           {scores ? (
             <CompanyScores scores={scores} />
           ) : scoresLoading ? (

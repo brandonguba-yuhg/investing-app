@@ -1,5 +1,7 @@
 import { ProviderError, type FinancialDataProvider } from "../provider";
 import type {
+  AIAnalysis,
+  AIAnswer,
   CompanyProfile,
   Financials,
   History,
@@ -79,5 +81,28 @@ export class HttpProvider implements FinancialDataProvider {
 
   getScores(symbol: Ticker): Promise<QualityScores> {
     return this.get<QualityScores>(`/api/scores/${encodeURIComponent(symbol)}`);
+  }
+
+  getAnalysis(symbol: Ticker): Promise<AIAnalysis> {
+    return this.get<AIAnalysis>(`/api/analysis/${encodeURIComponent(symbol)}`);
+  }
+
+  async ask(symbol: Ticker, question: string): Promise<AIAnswer> {
+    const res = await fetch(`${this.baseUrl}/api/ask/${encodeURIComponent(symbol)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body?.error) message = body.error;
+      } catch {
+        // ignore
+      }
+      throw new ProviderError(`Backend ${res.status}: ${message}`, res.status);
+    }
+    return (await res.json()) as AIAnswer;
   }
 }

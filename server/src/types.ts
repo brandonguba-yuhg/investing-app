@@ -143,6 +143,20 @@ export interface QualityScores {
   unavailable?: boolean;
 }
 
+export interface AIAnalysis {
+  summary: string;
+  bullCase: string[];
+  bearCase: string[];
+  /** ISO timestamp of when it was generated. */
+  generatedAt: string;
+  /** Model used, for transparency. */
+  model: string;
+}
+
+export interface AIAnswer {
+  answer: string;
+}
+
 export interface Multiples {
   marketCap?: number;
   enterpriseValue?: number;

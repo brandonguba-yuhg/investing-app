@@ -1558,6 +1558,145 @@ body, html, #root {
   line-height: 1.4;
 }
 
+/* AI analysis */
+.ai-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(91, 141, 239, 0.12);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.ai-loading,
+.ai-error {
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ai-error { color: var(--down); }
+
+.ai-summary {
+  margin: 10px 0 16px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.ai-cases {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.ai-case {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.ai-case h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ai-case.bull h4 { color: var(--up); }
+.ai-case.bear h4 { color: var(--down); }
+
+.ai-case ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-case li {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.ai-ask {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.ai-ask-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-ask-row input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 13px;
+  outline: none;
+}
+
+.ai-ask-row input:focus { border-color: var(--accent); }
+
+.ai-ask-row button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ai-ask-row button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-qa {
+  margin-top: 12px;
+}
+
+.ai-q {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.ai-q::before {
+  content: "Q: ";
+  color: var(--muted);
+}
+
+.ai-a {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.ai-a.loading { color: var(--muted); }
+.ai-a.error { color: var(--down); }
+
+.ai-disclaimer {
+  margin: 14px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
 /* ---------- mobile pass ---------- */
 @media (max-width: 720px) {
   .app {
@@ -1641,6 +1780,10 @@ body, html, #root {
   .val-result {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .ai-cases {
+    grid-template-columns: 1fr;
   }
 
   .score-grid {

@@ -1,9 +1,16 @@
+import dotenv from "dotenv";
+// override:true so a local .env wins over an empty/ambient ANTHROPIC_API_KEY
+// (some shells/harnesses pre-set it to ""). On Railway there's no .env file,
+// so the platform-injected variables are left untouched.
+dotenv.config({ override: true });
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
+import * as ai from "./ai.js";
 import { cache, TTL } from "./cache.js";
 import * as yahoo from "./yahoo.js";
 
 const app = express();
+app.use(express.json({ limit: "16kb" }));
 const PORT = Number(process.env.PORT) || 3001;
 
 // CORS: allow the configured frontend origin in prod, plus localhost dev ports.
@@ -29,7 +36,12 @@ app.use(
 );
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, cached: cache.size(), time: new Date().toISOString() });
+  res.json({
+    ok: true,
+    cached: cache.size(),
+    ai: ai.aiEnabled(),
+    time: new Date().toISOString(),
+  });
 });
 
 app.get("/api/search", async (req, res, next) => {
@@ -111,6 +123,57 @@ app.get("/api/history/:symbol", async (req, res, next) => {
     const out = await cache.wrap(`hist:${symbol}:${range}`, ttl, () =>
       yahoo.getHistory(symbol, range),
     );
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---- AI endpoints (Claude) -------------------------------------------------
+
+// Simple in-memory rate limit for the costly ask endpoint: N requests / window / IP.
+const askHits = new Map<string, number[]>();
+const ASK_WINDOW_MS = 60 * 1000;
+const ASK_MAX = 8;
+function askRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const hits = (askHits.get(ip) ?? []).filter((t) => now - t < ASK_WINDOW_MS);
+  hits.push(now);
+  askHits.set(ip, hits);
+  return hits.length > ASK_MAX;
+}
+
+app.get("/api/analysis/:symbol", async (req, res, next) => {
+  try {
+    if (!ai.aiEnabled()) {
+      return res.status(503).json({ error: "AI analysis is not configured." });
+    }
+    const symbol = req.params.symbol.toUpperCase();
+    const out = await cache.wrap(`analysis:${symbol}`, TTL.analysis, () =>
+      ai.getAnalysis(symbol),
+    );
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.post("/api/ask/:symbol", async (req, res, next) => {
+  try {
+    if (!ai.aiEnabled()) {
+      return res.status(503).json({ error: "AI is not configured." });
+    }
+    const ip = req.ip ?? "unknown";
+    if (askRateLimited(ip)) {
+      return res.status(429).json({ error: "Too many questions. Wait a minute and try again." });
+    }
+    const symbol = req.params.symbol.toUpperCase();
+    const question = String((req.body as { question?: unknown })?.question ?? "").trim();
+    if (!question) return res.status(400).json({ error: "Missing question." });
+    if (question.length > 500) {
+      return res.status(400).json({ error: "Question too long (max 500 chars)." });
+    }
+    const out = await ai.askQuestion(symbol, question);
     res.json(out);
   } catch (e) {
     next(e);

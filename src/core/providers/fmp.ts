@@ -1,5 +1,7 @@
 import { ProviderError, type FinancialDataProvider } from "../provider";
 import type {
+  AIAnalysis,
+  AIAnswer,
   BalanceSheet,
   CashFlowStatement,
   CompanyProfile,
@@ -159,6 +161,14 @@ export class FmpProvider implements FinancialDataProvider {
   async getScores(_symbol: Ticker): Promise<QualityScores> {
     // Quality scores are computed by the backend; FMP path is unsupported.
     return { unavailable: true };
+  }
+
+  async getAnalysis(_symbol: Ticker): Promise<AIAnalysis> {
+    throw new ProviderError("AI analysis requires the backend provider.", 501);
+  }
+
+  async ask(_symbol: Ticker, _question: string): Promise<AIAnswer> {
+    throw new ProviderError("AI Q&A requires the backend provider.", 501);
   }
 
   async getMultiples(symbol: Ticker): Promise<Multiples> {

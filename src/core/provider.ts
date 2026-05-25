@@ -1,4 +1,6 @@
 import type {
+  AIAnalysis,
+  AIAnswer,
   CompanyProfile,
   Financials,
   History,
@@ -21,6 +23,8 @@ export interface FinancialDataProvider {
   getHistory(symbol: Ticker, range: HistoryRange): Promise<History>;
   getNews(symbol: Ticker, limit?: number): Promise<NewsItem[]>;
   getScores(symbol: Ticker): Promise<QualityScores>;
+  getAnalysis(symbol: Ticker): Promise<AIAnalysis>;
+  ask(symbol: Ticker, question: string): Promise<AIAnswer>;
 }
 
 export class ProviderError extends Error {
