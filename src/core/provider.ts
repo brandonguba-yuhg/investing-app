@@ -5,6 +5,7 @@ import type {
   Financials,
   History,
   HistoryRange,
+  MarketBriefing,
   Multiples,
   NewsItem,
   Period,
@@ -25,6 +26,7 @@ export interface FinancialDataProvider {
   getScores(symbol: Ticker): Promise<QualityScores>;
   getAnalysis(symbol: Ticker): Promise<AIAnalysis>;
   ask(symbol: Ticker, question: string): Promise<AIAnswer>;
+  getBriefing(): Promise<MarketBriefing>;
 }
 
 export class ProviderError extends Error {

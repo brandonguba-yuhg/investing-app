@@ -6,6 +6,7 @@ import type {
   Financials,
   History,
   HistoryRange,
+  MarketBriefing,
   Multiples,
   NewsItem,
   Period,
@@ -104,5 +105,9 @@ export class HttpProvider implements FinancialDataProvider {
       throw new ProviderError(`Backend ${res.status}: ${message}`, res.status);
     }
     return (await res.json()) as AIAnswer;
+  }
+
+  getBriefing(): Promise<MarketBriefing> {
+    return this.get<MarketBriefing>(`/api/briefing`);
   }
 }

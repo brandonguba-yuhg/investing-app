@@ -157,6 +157,22 @@ export interface AIAnswer {
   answer: string;
 }
 
+export interface BriefingItem {
+  heading: string;
+  summary: string;
+}
+
+export interface MarketBriefing {
+  /** ISO date the briefing covers. */
+  date: string;
+  headline: string;
+  overview: string;
+  items: BriefingItem[];
+  sources?: { title: string; url: string }[];
+  generatedAt: string;
+  model: string;
+}
+
 export interface Multiples {
   marketCap?: number;
   enterpriseValue?: number;

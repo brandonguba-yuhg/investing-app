@@ -9,6 +9,7 @@ import type {
   History,
   HistoryRange,
   IncomeStatement,
+  MarketBriefing,
   Multiples,
   NewsItem,
   Period,
@@ -169,6 +170,10 @@ export class FmpProvider implements FinancialDataProvider {
 
   async ask(_symbol: Ticker, _question: string): Promise<AIAnswer> {
     throw new ProviderError("AI Q&A requires the backend provider.", 501);
+  }
+
+  async getBriefing(): Promise<MarketBriefing> {
+    throw new ProviderError("Market briefing requires the backend provider.", 501);
   }
 
   async getMultiples(symbol: Ticker): Promise<Multiples> {

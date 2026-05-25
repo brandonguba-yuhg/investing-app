@@ -47,4 +47,5 @@ export const TTL = {
   news: 10 * 60 * 1000,          // 10 minutes — news flow but not real-time
   scores: 24 * 60 * 60 * 1000,   // 24 hours — derived from annual fundamentals
   analysis: 24 * 60 * 60 * 1000, // 24 hours — AI analysis is costly; cache hard
+  briefing: 24 * 60 * 60 * 1000, // 24 hours — once-daily market briefing
 } as const;

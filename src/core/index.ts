@@ -9,6 +9,8 @@ export type {
   HistoryPoint,
   HistoryRange,
   IncomeStatement,
+  MarketBriefing,
+  BriefingItem,
   NewsItem,
   Multiples,
   Period,

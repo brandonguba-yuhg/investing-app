@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AIAnalysis, AIAnswer, Ticker } from "./types.js";
+import type { AIAnalysis, AIAnswer, MarketBriefing, Ticker } from "./types.js";
 import {
   getFinancials,
   getMultiples,
@@ -187,4 +187,117 @@ function extractText(message: Anthropic.Message): string {
     if (block.type === "text") parts.push(block.text);
   }
   return parts.join("").trim();
+}
+
+// ---------- daily market briefing (web search) ----------
+
+const BRIEFING_SYSTEM = `You are the markets editor for a stock-research app, writing today's macro briefing.
+Use web search to find the most important market-moving developments from the last 24 hours:
+the Fed and interest rates, inflation data, major geopolitical events (wars, elections, trade),
+big equity/sector/commodity/currency moves, and notable economic data.
+
+Then respond with ONLY a JSON object (no prose before/after, no markdown code fences) of this shape:
+{
+  "headline": "one punchy line capturing the day's single biggest market story",
+  "overview": "2-3 sentence summary of the overall market mood and what's driving it",
+  "items": [
+    { "heading": "short topic label, e.g. 'Fed & Rates'", "summary": "2-3 factual sentences" }
+  ]
+}
+Include 4-6 items covering distinct themes. Be specific and factual — cite figures, levels,
+and named events from your search. No hype, no investment advice, no AI disclaimers.`;
+
+export async function getMarketBriefing(): Promise<MarketBriefing> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  let message = await getClient().messages.create({
+    model: MODEL,
+    max_tokens: 4000,
+    thinking: { type: "adaptive" },
+    output_config: { effort: "medium" },
+    system: BRIEFING_SYSTEM,
+    tools: [{ type: "web_search_20260209", name: "web_search" } as never],
+    messages: [
+      {
+        role: "user",
+        content: `Write today's market briefing for ${today}. Search for the latest macro and market news first.`,
+      },
+    ],
+  });
+
+  // Server-side tool loop may pause; resume up to a few times.
+  let guard = 0;
+  const history: Anthropic.MessageParam[] = [
+    {
+      role: "user",
+      content: `Write today's market briefing for ${today}. Search for the latest macro and market news first.`,
+    },
+  ];
+  while (message.stop_reason === "pause_turn" && guard < 3) {
+    guard += 1;
+    history.push({ role: "assistant", content: message.content });
+    message = await getClient().messages.create({
+      model: MODEL,
+      max_tokens: 4000,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "medium" },
+      system: BRIEFING_SYSTEM,
+      tools: [{ type: "web_search_20260209", name: "web_search" } as never],
+      messages: history,
+    });
+  }
+
+  const parsed = parseJsonLoose(extractText(message)) as {
+    headline?: string;
+    overview?: string;
+    items?: Array<{ heading?: string; summary?: string }>;
+  };
+
+  const items = (parsed.items ?? [])
+    .filter((i) => i.heading && i.summary)
+    .map((i) => ({ heading: String(i.heading), summary: String(i.summary) }));
+
+  return {
+    date: today,
+    headline: parsed.headline ?? "Today's market briefing",
+    overview: parsed.overview ?? "",
+    items,
+    sources: extractSources(message),
+    generatedAt: new Date().toISOString(),
+    model: MODEL,
+  };
+}
+
+/** Parse a JSON object out of model text, tolerating code fences / stray prose. */
+function parseJsonLoose(text: string): unknown {
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) t = fence[1].trim();
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start >= 0 && end > start) t = t.slice(start, end + 1);
+  return JSON.parse(t);
+}
+
+/** Best-effort pull of source links from web_search_tool_result blocks. */
+function extractSources(
+  message: Anthropic.Message,
+): { title: string; url: string }[] | undefined {
+  const out: { title: string; url: string }[] = [];
+  const seen = new Set<string>();
+  const blocks = message.content as unknown as Array<Record<string, unknown>>;
+  for (const block of blocks) {
+    if (block.type !== "web_search_tool_result") continue;
+    const content = block.content as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(content)) continue;
+    for (const r of content) {
+      const url = r.url as string | undefined;
+      const title = (r.title as string | undefined) ?? url;
+      if (url && title && !seen.has(url)) {
+        seen.add(url);
+        out.push({ title, url });
+      }
+    }
+  }
+  return out.length ? out.slice(0, 8) : undefined;
 }

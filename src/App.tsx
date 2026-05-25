@@ -6,6 +6,7 @@ import type { FinancialDataProvider } from "./core/provider";
 import { CompanyView } from "./ui/CompanyView";
 import { CompareView } from "./ui/CompareView";
 import { Dashboard } from "./ui/Dashboard";
+import { MarketBriefing } from "./ui/MarketBriefing";
 import { ProviderContext } from "./ui/providerContext";
 import { SearchBar } from "./ui/SearchBar";
 import { useTheme } from "./ui/useTheme";
@@ -94,10 +95,14 @@ function App() {
             symbol ? (
               <CompanyView key={symbol} symbol={symbol} />
             ) : (
-              <div className="empty">
-                <p>Search for a company by name or ticker symbol to get started.</p>
-                <p className="hint">Try: AAPL, MSFT, GOOGL, Tesla, Amazon</p>
-              </div>
+              <MarketBriefing
+                fallback={
+                  <div className="empty">
+                    <p>Search for a company by name or ticker symbol to get started.</p>
+                    <p className="hint">Try: AAPL, MSFT, GOOGL, Tesla, Amazon</p>
+                  </div>
+                }
+              />
             )
           ) : page === "dashboard" ? (
             <Dashboard onSelect={openCompany} />

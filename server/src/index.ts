@@ -143,6 +143,22 @@ function askRateLimited(ip: string): boolean {
   return hits.length > ASK_MAX;
 }
 
+app.get("/api/briefing", async (_req, res, next) => {
+  try {
+    if (!ai.aiEnabled()) {
+      return res.status(503).json({ error: "AI briefing is not configured." });
+    }
+    // Cache key includes the date so it rolls over to a fresh briefing daily.
+    const today = new Date().toISOString().slice(0, 10);
+    const out = await cache.wrap(`briefing:${today}`, TTL.briefing, () =>
+      ai.getMarketBriefing(),
+    );
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
 app.get("/api/analysis/:symbol", async (req, res, next) => {
   try {
     if (!ai.aiEnabled()) {
