@@ -6,6 +6,7 @@ import type {
   Multiples,
   NewsItem,
   Period,
+  QualityScores,
   Quote,
   SearchResult,
   Ticker,
@@ -19,6 +20,7 @@ export interface FinancialDataProvider {
   getMultiples(symbol: Ticker): Promise<Multiples>;
   getHistory(symbol: Ticker, range: HistoryRange): Promise<History>;
   getNews(symbol: Ticker, limit?: number): Promise<NewsItem[]>;
+  getScores(symbol: Ticker): Promise<QualityScores>;
 }
 
 export class ProviderError extends Error {

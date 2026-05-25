@@ -9,10 +9,12 @@ import type {
   Multiples,
   NewsItem,
   Period,
+  QualityScores,
   Quote,
   SearchResult,
   Ticker,
 } from "./types.js";
+import { computeScores, type FundamentalRow } from "./scores.js";
 
 // v3 default export is the YahooFinance class; instantiate to use modules.
 // The library's TypeScript types are strict and don't match the loose shapes
@@ -255,6 +257,51 @@ function mapCash(r: Row, period: Period): CashFlowStatement {
     financingCashFlow: financing,
     freeCashFlow: fcf,
   };
+}
+
+// ---------- quality scores ----------
+
+export async function getScores(symbol: Ticker): Promise<QualityScores> {
+  const period1 = new Date(Date.now() - 3 * 365 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const [rows, quoteRaw] = await Promise.all([
+    yf
+      .fundamentalsTimeSeries(symbol, { period1, module: "all", type: "annual" })
+      .catch(() => [] as Array<Record<string, unknown>>),
+    yf.quote(symbol).catch(() => ({}) as Record<string, unknown>),
+  ]);
+
+  if (!rows || rows.length < 2) return { unavailable: true };
+
+  // newest first
+  const sorted = [...rows].sort(
+    (a, b) => new Date(b.date as string).getTime() - new Date(a.date as string).getTime(),
+  );
+  const toRow = (r: Record<string, unknown>): FundamentalRow => ({
+    date: dateString(r.date),
+    netIncome: num(r.netIncome) ?? num(r.netIncomeCommonStockholders) ?? 0,
+    totalAssets: num(r.totalAssets) ?? 0,
+    operatingCashFlow:
+      num(r.operatingCashFlow) ?? num(r.cashFlowFromContinuingOperatingActivities) ?? 0,
+    longTermDebt: num(r.longTermDebt) ?? num(r.longTermDebtAndCapitalLeaseObligation) ?? 0,
+    currentAssets: num(r.currentAssets) ?? 0,
+    currentLiabilities: num(r.currentLiabilities) ?? 0,
+    grossProfit: num(r.grossProfit) ?? 0,
+    revenue: num(r.totalRevenue) ?? num(r.operatingRevenue) ?? 0,
+    ebit: num(r.EBIT) ?? num(r.operatingIncome) ?? 0,
+    retainedEarnings: num(r.retainedEarnings) ?? 0,
+    totalLiabilities: num(r.totalLiabilitiesNetMinorityInterest) ?? 0,
+    sharesOutstanding:
+      num(r.ordinarySharesNumber) ?? num(r.shareIssued) ?? num(r.basicAverageShares) ?? 0,
+  });
+
+  const curr = toRow(sorted[0]);
+  const prior = toRow(sorted[1]);
+  const marketCap = num(quoteRaw.marketCap);
+
+  return computeScores(curr, prior, marketCap);
 }
 
 // ---------- news ----------

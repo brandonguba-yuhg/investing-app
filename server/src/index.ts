@@ -117,6 +117,18 @@ app.get("/api/history/:symbol", async (req, res, next) => {
   }
 });
 
+app.get("/api/scores/:symbol", async (req, res, next) => {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+    const out = await cache.wrap(`scores:${symbol}`, TTL.scores, () =>
+      yahoo.getScores(symbol),
+    );
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
 app.get("/api/multiples/:symbol", async (req, res, next) => {
   try {
     const symbol = req.params.symbol.toUpperCase();

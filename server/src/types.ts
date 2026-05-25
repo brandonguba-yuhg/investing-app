@@ -104,6 +104,45 @@ export interface NewsItem {
   thumbnail?: string;
 }
 
+export interface ScoreCriterion {
+  label: string;
+  pass: boolean;
+  detail?: string;
+}
+
+export interface PiotroskiScore {
+  score: number; // 0–9
+  criteria: ScoreCriterion[];
+}
+
+export interface AltmanComponent {
+  label: string;
+  value: number; // the underlying ratio
+  contribution: number; // weighted contribution to Z
+}
+
+export interface AltmanScore {
+  z: number;
+  zone: "safe" | "grey" | "distress";
+  components: AltmanComponent[];
+}
+
+export interface CompositeScore {
+  score: number; // 0–100
+  grade: string; // A+ … F
+  breakdown: { label: string; points: number; max: number }[];
+}
+
+export interface QualityScores {
+  /** ISO date of the latest fiscal year used. */
+  asOf?: string;
+  piotroski?: PiotroskiScore;
+  altman?: AltmanScore;
+  composite?: CompositeScore;
+  /** True when fundamentals were insufficient to compute. */
+  unavailable?: boolean;
+}
+
 export interface Multiples {
   marketCap?: number;
   enterpriseValue?: number;

@@ -10,6 +10,7 @@ import type {
   Multiples,
   NewsItem,
   Period,
+  QualityScores,
   Quote,
   SearchResult,
   Ticker,
@@ -153,6 +154,11 @@ export class FmpProvider implements FinancialDataProvider {
   async getNews(_symbol: Ticker, _limit?: number): Promise<NewsItem[]> {
     // Not exposed on FMP free tier; degrade silently.
     return [];
+  }
+
+  async getScores(_symbol: Ticker): Promise<QualityScores> {
+    // Quality scores are computed by the backend; FMP path is unsupported.
+    return { unavailable: true };
   }
 
   async getMultiples(symbol: Ticker): Promise<Multiples> {

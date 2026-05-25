@@ -1227,6 +1227,191 @@ body, html, #root {
   margin-top: 2px;
 }
 
+/* Quality scores (Analysis tab) */
+.scores {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.scores-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.score-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.score-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.score-card-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.score-big {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.score-denom {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.score-blurb {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* Composite */
+.composite-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.grade {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.grade-a { background: #16a34a; }
+.grade-b { background: #65a30d; }
+.grade-c { background: #ca8a04; }
+.grade-d { background: #ea580c; }
+.grade-f { background: #dc2626; }
+
+.composite-title {
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.composite-score {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.composite-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cbar-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.cbar-pts { color: var(--text); font-weight: 500; }
+
+.cbar-track {
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cbar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+/* Piotroski criteria */
+.criteria {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.criteria li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.criteria .tick {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.criteria li.pass .tick { background: rgba(34, 197, 94, 0.18); color: var(--up); }
+.criteria li.fail .tick { background: rgba(239, 68, 68, 0.15); color: var(--down); }
+.criteria li.fail .crit-label { color: var(--muted); }
+.crit-label { cursor: help; }
+
+/* Altman */
+.zone-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.zone-badge.safe { background: rgba(34, 197, 94, 0.18); color: var(--up); }
+.zone-badge.grey { background: rgba(138, 147, 166, 0.2); color: var(--muted); }
+.zone-badge.distress { background: rgba(239, 68, 68, 0.16); color: var(--down); }
+
+.altman-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.altman-table td {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.altman-table tr:last-child td { border-bottom: none; }
+.altman-table .row-label { color: var(--muted); }
+.altman-table .num { text-align: right; }
+.altman-table .contrib { color: var(--text); font-weight: 500; width: 64px; }
+
 /* ---------- mobile pass ---------- */
 @media (max-width: 720px) {
   .app {

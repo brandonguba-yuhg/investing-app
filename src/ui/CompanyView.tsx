@@ -10,10 +10,12 @@ import type {
   Financials,
   Multiples,
   Period,
+  QualityScores,
   Quote,
 } from "../core/types";
 import { CompanyCharts } from "./CompanyCharts";
 import { CompanyMultiples } from "./CompanyMultiples";
+import { CompanyScores } from "./CompanyScores";
 // Vaulted: notes feature kept on disk but not wired into the UI.
 // import { CompanyNotes } from "./CompanyNotes";
 import { NewsFeed } from "./NewsFeed";
@@ -25,7 +27,7 @@ interface Props {
   symbol: string;
 }
 
-type View = "overview" | "charts" | "multiples";
+type View = "overview" | "charts" | "multiples" | "analysis";
 type Statement = "income" | "balance" | "cashflow";
 
 export function CompanyView({ symbol }: Props) {
@@ -41,6 +43,9 @@ export function CompanyView({ symbol }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [multiplesLoading, setMultiplesLoading] = useState(false);
   const [multiplesError, setMultiplesError] = useState<string | null>(null);
+  const [scores, setScores] = useState<QualityScores | null>(null);
+  const [scoresLoading, setScoresLoading] = useState(false);
+  const [scoresError, setScoresError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const watchlist = useWatchlist();
 
@@ -51,6 +56,8 @@ export function CompanyView({ symbol }: Props) {
     setError(null);
     setMultiples(null);
     setMultiplesError(null);
+    setScores(null);
+    setScoresError(null);
     Promise.all([
       provider.getProfile(symbol),
       provider.getQuote(symbol),
@@ -100,6 +107,31 @@ export function CompanyView({ symbol }: Props) {
       cancelled = true;
     };
   }, [view, symbol, provider, multiples]);
+
+  // Lazy: fetch quality scores only when the Analysis tab is opened.
+  useEffect(() => {
+    if (view !== "analysis" || scores) return;
+    let cancelled = false;
+    setScoresLoading(true);
+    setScoresError(null);
+    provider
+      .getScores(symbol)
+      .then((s) => {
+        if (!cancelled) {
+          setScores(s);
+          setScoresLoading(false);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setScoresError(toErrorMessage(e, symbol));
+          setScoresLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [view, symbol, provider, scores]);
 
   if (loading) return <div className="loading">Loading {symbol}…</div>;
   if (error) {
@@ -170,6 +202,12 @@ export function CompanyView({ symbol }: Props) {
         >
           Multiples
         </button>
+        <button
+          className={view === "analysis" ? "view-tab on" : "view-tab"}
+          onClick={() => setView("analysis")}
+        >
+          Analysis
+        </button>
       </div>
 
       {view === "overview" ? (
@@ -225,25 +263,49 @@ export function CompanyView({ symbol }: Props) {
           </div>
           <CompanyCharts financials={financials} period={period} />
         </>
-      ) : multiples ? (
-        <CompanyMultiples multiples={multiples} />
-      ) : multiplesLoading ? (
-        <div className="loading">Loading multiples…</div>
-      ) : multiplesError ? (
-        <div className="error-block">
-          <p>{multiplesError}</p>
-          <button
-            className="retry-btn"
-            onClick={() => {
-              setMultiples(null);
-              setMultiplesError(null);
-            }}
-          >
-            Try again
-          </button>
-        </div>
+      ) : view === "multiples" ? (
+        multiples ? (
+          <CompanyMultiples multiples={multiples} />
+        ) : multiplesLoading ? (
+          <div className="loading">Loading multiples…</div>
+        ) : multiplesError ? (
+          <div className="error-block">
+            <p>{multiplesError}</p>
+            <button
+              className="retry-btn"
+              onClick={() => {
+                setMultiples(null);
+                setMultiplesError(null);
+              }}
+            >
+              Try again
+            </button>
+          </div>
+        ) : (
+          <div className="loading">Multiples unavailable for {symbol}</div>
+        )
       ) : (
-        <div className="loading">Multiples unavailable for {symbol}</div>
+        // view === "analysis"
+        scores ? (
+          <CompanyScores scores={scores} />
+        ) : scoresLoading ? (
+          <div className="loading">Crunching the numbers…</div>
+        ) : scoresError ? (
+          <div className="error-block">
+            <p>{scoresError}</p>
+            <button
+              className="retry-btn"
+              onClick={() => {
+                setScores(null);
+                setScoresError(null);
+              }}
+            >
+              Try again
+            </button>
+          </div>
+        ) : (
+          <div className="loading">Scores unavailable for {symbol}</div>
+        )
       )}
     </div>
   );

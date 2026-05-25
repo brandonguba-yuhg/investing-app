@@ -10,6 +10,7 @@ export type {
   NewsItem,
   Multiples,
   Period,
+  QualityScores,
   Quote,
   SearchResult,
   Ticker,

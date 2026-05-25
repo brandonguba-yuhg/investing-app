@@ -7,6 +7,7 @@ import type {
   Multiples,
   NewsItem,
   Period,
+  QualityScores,
   Quote,
   SearchResult,
   Ticker,
@@ -74,5 +75,9 @@ export class HttpProvider implements FinancialDataProvider {
     return this.get<NewsItem[]>(
       `/api/news/${encodeURIComponent(symbol)}?limit=${limit}`,
     );
+  }
+
+  getScores(symbol: Ticker): Promise<QualityScores> {
+    return this.get<QualityScores>(`/api/scores/${encodeURIComponent(symbol)}`);
   }
 }
