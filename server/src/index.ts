@@ -7,7 +7,7 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import * as ai from "./ai.js";
 import { cache, TTL } from "./cache.js";
-import * as yahoo from "./yahoo.js";
+import * as data from "./data.js";
 
 const app = express();
 app.use(express.json({ limit: "16kb" }));
@@ -49,7 +49,7 @@ app.get("/api/search", async (req, res, next) => {
     const q = String(req.query.q ?? "").trim();
     if (!q) return res.json([]);
     const out = await cache.wrap(`search:${q.toLowerCase()}`, TTL.search, () =>
-      yahoo.search(q),
+      data.search(q),
     );
     res.json(out);
   } catch (e) {
@@ -61,7 +61,7 @@ app.get("/api/profile/:symbol", async (req, res, next) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
     const out = await cache.wrap(`profile:${symbol}`, TTL.profile, () =>
-      yahoo.getProfile(symbol),
+      data.getProfile(symbol),
     );
     res.json(out);
   } catch (e) {
@@ -73,7 +73,7 @@ app.get("/api/quote/:symbol", async (req, res, next) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
     const out = await cache.wrap(`quote:${symbol}`, TTL.quote, () =>
-      yahoo.getQuote(symbol),
+      data.getQuote(symbol),
     );
     res.json(out);
   } catch (e) {
@@ -89,7 +89,7 @@ app.get("/api/financials/:symbol", async (req, res, next) => {
     const out = await cache.wrap(
       `fin:${symbol}:${period}:${limit}`,
       TTL.financials,
-      () => yahoo.getFinancials(symbol, period, limit),
+      () => data.getFinancials(symbol, period, limit),
     );
     res.json(out);
   } catch (e) {
@@ -102,7 +102,7 @@ app.get("/api/news/:symbol", async (req, res, next) => {
     const symbol = req.params.symbol.toUpperCase();
     const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
     const out = await cache.wrap(`news:${symbol}:${limit}`, TTL.news, () =>
-      yahoo.getNews(symbol, limit),
+      data.getNews(symbol, limit),
     );
     res.json(out);
   } catch (e) {
@@ -121,7 +121,7 @@ app.get("/api/history/:symbol", async (req, res, next) => {
       : ("1y" as Range);
     const ttl = range === "1d" ? TTL.historyIntraday : TTL.historyDaily;
     const out = await cache.wrap(`hist:${symbol}:${range}`, ttl, () =>
-      yahoo.getHistory(symbol, range),
+      data.getHistory(symbol, range),
     );
     res.json(out);
   } catch (e) {
@@ -200,7 +200,7 @@ app.get("/api/scores/:symbol", async (req, res, next) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
     const out = await cache.wrap(`scores:${symbol}`, TTL.scores, () =>
-      yahoo.getScores(symbol),
+      data.getScores(symbol),
     );
     res.json(out);
   } catch (e) {
@@ -212,7 +212,7 @@ app.get("/api/multiples/:symbol", async (req, res, next) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
     const out = await cache.wrap(`mult:${symbol}`, TTL.multiples, () =>
-      yahoo.getMultiples(symbol),
+      data.getMultiples(symbol),
     );
     res.json(out);
   } catch (e) {

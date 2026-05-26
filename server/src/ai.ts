@@ -6,7 +6,7 @@ import {
   getProfile,
   getQuote,
   getScores,
-} from "./yahoo.js";
+} from "./data.js";
 
 // Default to the most capable model. Swap to "claude-sonnet-4-6" (~3x cheaper)
 // or "claude-haiku-4-5" (~5x cheaper) if cost outweighs analysis quality.
