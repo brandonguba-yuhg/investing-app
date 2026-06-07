@@ -209,7 +209,19 @@ Then respond with ONLY a JSON object (no prose before/after, no markdown code fe
   ]
 }
 Include 4-6 items covering distinct themes. Be specific and factual — cite figures, levels,
-and named events from your search. No hype, no investment advice, no AI disclaimers.`;
+and named events from your search. No hype, no investment advice, no AI disclaimers.
+
+Keep research efficient: run at most ~5 broad web searches (e.g. "stock market today",
+"Fed interest rates news", "oil prices geopolitics") rather than one narrow search per
+sub-topic. Once you have enough to cover the themes, stop searching and write the JSON.`;
+
+// A hard max_uses cap fights this prompt's multi-theme coverage: the model wants
+// more searches, hits the cap, then loops on pause_turn until the guard runs out
+// (observed 480s+ runs and truncated JSON). Instead we keep the tool uncapped and
+// nudge toward fewer searches via the system prompt below.
+const BRIEFING_TOOLS = [
+  { type: "web_search_20260209", name: "web_search" } as never,
+];
 
 export async function getMarketBriefing(): Promise<MarketBriefing> {
   const today = new Date().toISOString().slice(0, 10);
@@ -220,7 +232,7 @@ export async function getMarketBriefing(): Promise<MarketBriefing> {
     thinking: { type: "adaptive" },
     output_config: { effort: "medium" },
     system: BRIEFING_SYSTEM,
-    tools: [{ type: "web_search_20260209", name: "web_search" } as never],
+    tools: BRIEFING_TOOLS,
     messages: [
       {
         role: "user",
@@ -246,7 +258,7 @@ export async function getMarketBriefing(): Promise<MarketBriefing> {
       thinking: { type: "adaptive" },
       output_config: { effort: "medium" },
       system: BRIEFING_SYSTEM,
-      tools: [{ type: "web_search_20260209", name: "web_search" } as never],
+      tools: BRIEFING_TOOLS,
       messages: history,
     });
   }
@@ -259,17 +271,30 @@ export async function getMarketBriefing(): Promise<MarketBriefing> {
 
   const items = (parsed.items ?? [])
     .filter((i) => i.heading && i.summary)
-    .map((i) => ({ heading: String(i.heading), summary: String(i.summary) }));
+    .map((i) => ({
+      heading: stripCitations(String(i.heading)),
+      summary: stripCitations(String(i.summary)),
+    }));
 
   return {
     date: today,
-    headline: parsed.headline ?? "Today's market briefing",
-    overview: parsed.overview ?? "",
+    headline: stripCitations(parsed.headline ?? "Today's market briefing"),
+    overview: stripCitations(parsed.overview ?? ""),
     items,
     sources: extractSources(message),
     generatedAt: new Date().toISOString(),
     model: BRIEFING_MODEL,
   };
+}
+
+// Web search wraps cited claims in <cite index="..">..</cite> markup. Strip the
+// tags (keeping the text) so they don't render literally in the UI; real source
+// links are surfaced separately via extractSources().
+function stripCitations(text: string): string {
+  return text
+    .replace(/<\/?cite[^>]*>/gi, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 /** Parse a JSON object out of model text, tolerating code fences / stray prose. */
