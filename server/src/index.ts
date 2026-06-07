@@ -8,6 +8,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import * as ai from "./ai.js";
 import { cache, TTL } from "./cache.js";
 import * as data from "./data.js";
+import * as events from "./events.js";
 
 const app = express();
 app.use(express.json({ limit: "16kb" }));
@@ -153,6 +154,23 @@ app.get("/api/briefing", async (_req, res, next) => {
     const out = await cache.wrap(`briefing:${today}`, TTL.briefing, () =>
       ai.getMarketBriefing(),
     );
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.get("/api/events", async (req, res, next) => {
+  try {
+    // Optional watchlist so the feed can include those companies' earnings.
+    // The upstream FMP fetch is cached by date inside getUpcomingEvents, so
+    // varying watchlists don't multiply API calls.
+    const watchlist = String(req.query.watchlist ?? "")
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean)
+      .slice(0, 50);
+    const out = await events.getUpcomingEvents(watchlist);
     res.json(out);
   } catch (e) {
     next(e);

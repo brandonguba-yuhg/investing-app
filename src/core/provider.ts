@@ -13,6 +13,7 @@ import type {
   Quote,
   SearchResult,
   Ticker,
+  UpcomingEvents,
 } from "./types";
 
 export interface FinancialDataProvider {
@@ -27,6 +28,7 @@ export interface FinancialDataProvider {
   getAnalysis(symbol: Ticker): Promise<AIAnalysis>;
   ask(symbol: Ticker, question: string): Promise<AIAnswer>;
   getBriefing(): Promise<MarketBriefing>;
+  getUpcomingEvents(watchlist?: Ticker[]): Promise<UpcomingEvents>;
 }
 
 export class ProviderError extends Error {

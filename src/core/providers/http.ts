@@ -14,6 +14,7 @@ import type {
   Quote,
   SearchResult,
   Ticker,
+  UpcomingEvents,
 } from "../types";
 
 /**
@@ -109,5 +110,12 @@ export class HttpProvider implements FinancialDataProvider {
 
   getBriefing(): Promise<MarketBriefing> {
     return this.get<MarketBriefing>(`/api/briefing`);
+  }
+
+  getUpcomingEvents(watchlist: Ticker[] = []): Promise<UpcomingEvents> {
+    const q = watchlist.length
+      ? `?watchlist=${encodeURIComponent(watchlist.join(","))}`
+      : "";
+    return this.get<UpcomingEvents>(`/api/events${q}`);
   }
 }

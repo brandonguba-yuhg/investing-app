@@ -173,6 +173,26 @@ export interface MarketBriefing {
   model: string;
 }
 
+export type EventCategory = "macro" | "earnings";
+
+export interface UpcomingEvent {
+  /** YYYY-MM-DD — the day the market reacts to this event. */
+  date: string;
+  title: string;
+  category: EventCategory;
+  importance: "high" | "medium" | "low";
+  /** Short context line, e.g. "May 2026 data · 8:30 AM ET" or "EPS est. 5.83". */
+  detail?: string;
+  /** Ticker, for earnings events. */
+  symbol?: string;
+}
+
+export interface UpcomingEvents {
+  /** ISO timestamp of when the list was assembled. */
+  generatedAt: string;
+  events: UpcomingEvent[];
+}
+
 export interface Multiples {
   marketCap?: number;
   enterpriseValue?: number;

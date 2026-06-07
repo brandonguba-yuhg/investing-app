@@ -213,6 +213,33 @@ export async function getMultiples(symbol: Ticker): Promise<Multiples> {
   };
 }
 
+export interface EarningsEvent {
+  symbol: Ticker;
+  date: string; // YYYY-MM-DD
+  epsEstimated?: number | null;
+  revenueEstimated?: number | null;
+}
+
+/** Free-tier earnings calendar for a date window (YYYY-MM-DD, inclusive). */
+export async function getEarningsCalendar(from: string, to: string): Promise<EarningsEvent[]> {
+  const raw = await fetchJson<Array<{
+    symbol?: string;
+    date?: string;
+    epsEstimated?: number | null;
+    revenueEstimated?: number | null;
+  }>>("/earnings-calendar", { from, to });
+  return (raw ?? [])
+    .filter((r): r is { symbol: string; date: string } & typeof r =>
+      Boolean(r.symbol) && Boolean(r.date),
+    )
+    .map((r) => ({
+      symbol: r.symbol,
+      date: r.date,
+      epsEstimated: r.epsEstimated ?? null,
+      revenueEstimated: r.revenueEstimated ?? null,
+    }));
+}
+
 interface IncomeRaw {
   date: string;
   revenue: number;

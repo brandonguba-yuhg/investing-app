@@ -7,6 +7,7 @@ import { CompanyView } from "./ui/CompanyView";
 import { CompareView } from "./ui/CompareView";
 import { Dashboard } from "./ui/Dashboard";
 import { MarketBriefing } from "./ui/MarketBriefing";
+import { UpcomingEvents } from "./ui/UpcomingEvents";
 import { ProviderContext } from "./ui/providerContext";
 import { SearchBar } from "./ui/SearchBar";
 import { useTheme } from "./ui/useTheme";
@@ -100,14 +101,17 @@ function App() {
         </header>
         <main className="app-main">
           {page === "home" ? (
-            <MarketBriefing
-              fallback={
-                <div className="empty">
-                  <p>Use the search bar or the Lookup tab to explore a company.</p>
-                  <p className="hint">The daily market briefing appears here once configured.</p>
-                </div>
-              }
-            />
+            <>
+              <MarketBriefing
+                fallback={
+                  <div className="empty">
+                    <p>Use the search bar or the Lookup tab to explore a company.</p>
+                    <p className="hint">The daily market briefing appears here once configured.</p>
+                  </div>
+                }
+              />
+              <UpcomingEvents />
+            </>
           ) : page === "lookup" ? (
             symbol ? (
               <CompanyView key={symbol} symbol={symbol} />

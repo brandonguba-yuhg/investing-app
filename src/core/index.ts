@@ -18,6 +18,9 @@ export type {
   Quote,
   SearchResult,
   Ticker,
+  EventCategory,
+  UpcomingEvent,
+  UpcomingEvents,
 } from "./types";
 export { ProviderError, type FinancialDataProvider } from "./provider";
 export { FmpProvider } from "./providers/fmp";

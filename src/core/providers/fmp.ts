@@ -17,6 +17,7 @@ import type {
   Quote,
   SearchResult,
   Ticker,
+  UpcomingEvents,
 } from "../types";
 
 const BASE = "https://financialmodelingprep.com/stable";
@@ -174,6 +175,10 @@ export class FmpProvider implements FinancialDataProvider {
 
   async getBriefing(): Promise<MarketBriefing> {
     throw new ProviderError("Market briefing requires the backend provider.", 501);
+  }
+
+  async getUpcomingEvents(_watchlist?: Ticker[]): Promise<UpcomingEvents> {
+    throw new ProviderError("Upcoming events require the backend provider.", 501);
   }
 
   async getMultiples(symbol: Ticker): Promise<Multiples> {
