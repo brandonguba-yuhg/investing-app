@@ -12,6 +12,10 @@ import {
 // or "claude-haiku-4-5" (~5x cheaper) if cost outweighs analysis quality.
 const MODEL = "claude-opus-4-7";
 
+// The daily briefing is a high-frequency web-search summary, not deep analysis,
+// so it runs on Sonnet to cut cost. Bump to MODEL if quality slips.
+const BRIEFING_MODEL = "claude-sonnet-4-6";
+
 let client: Anthropic | null = null;
 function getClient(): Anthropic {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -211,7 +215,7 @@ export async function getMarketBriefing(): Promise<MarketBriefing> {
   const today = new Date().toISOString().slice(0, 10);
 
   let message = await getClient().messages.create({
-    model: MODEL,
+    model: BRIEFING_MODEL,
     max_tokens: 4000,
     thinking: { type: "adaptive" },
     output_config: { effort: "medium" },
@@ -237,7 +241,7 @@ export async function getMarketBriefing(): Promise<MarketBriefing> {
     guard += 1;
     history.push({ role: "assistant", content: message.content });
     message = await getClient().messages.create({
-      model: MODEL,
+      model: BRIEFING_MODEL,
       max_tokens: 4000,
       thinking: { type: "adaptive" },
       output_config: { effort: "medium" },
@@ -264,7 +268,7 @@ export async function getMarketBriefing(): Promise<MarketBriefing> {
     items,
     sources: extractSources(message),
     generatedAt: new Date().toISOString(),
-    model: MODEL,
+    model: BRIEFING_MODEL,
   };
 }
 

@@ -1,30 +1,57 @@
 import { useEffect, useState } from "react";
 import { formatRelativeTime } from "../core/format";
+import { ProviderError } from "../core/provider";
 import type { MarketBriefing as Briefing } from "../core/types";
 import { useProvider } from "./providerContext";
 
 interface Props {
-  /** Rendered when AI briefing isn't available (e.g. FMP provider or no key). */
+  /** Rendered when AI briefing isn't configured (no key / non-backend provider). */
   fallback: React.ReactNode;
+}
+
+// Statuses that mean "AI isn't set up" rather than "it failed this time".
+// 503: backend reports AI not configured. 501: FMP provider has no briefing.
+const NOT_CONFIGURED_STATUSES = new Set([501, 503]);
+
+// Upstream errors arrive as `Backend 500: 400 {"...":{"message":"..."}}`.
+// Pull out the innermost human-readable message when one is embedded.
+function cleanErrorMessage(raw: string): string {
+  const match = raw.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (match) {
+    try {
+      return JSON.parse(`"${match[1]}"`);
+    } catch {
+      return match[1];
+    }
+  }
+  return raw.replace(/^Backend \d+:\s*/, "");
 }
 
 export function MarketBriefing({ fallback }: Props) {
   const provider = useProvider();
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [loading, setLoading] = useState(true);
-  const [unavailable, setUnavailable] = useState(false);
+  const [notConfigured, setNotConfigured] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setUnavailable(false);
+    setNotConfigured(false);
+    setError(null);
     provider
       .getBriefing()
       .then((b) => {
         if (!cancelled) setBriefing(b);
       })
-      .catch(() => {
-        if (!cancelled) setUnavailable(true);
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        const status = e instanceof ProviderError ? e.status : undefined;
+        if (status && NOT_CONFIGURED_STATUSES.has(status)) {
+          setNotConfigured(true);
+        } else {
+          setError(cleanErrorMessage(e instanceof Error ? e.message : "Unknown error"));
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -34,7 +61,22 @@ export function MarketBriefing({ fallback }: Props) {
     };
   }, [provider]);
 
-  if (unavailable) return <>{fallback}</>;
+  if (notConfigured) return <>{fallback}</>;
+
+  if (error !== null) {
+    return (
+      <div className="briefing">
+        <div className="briefing-error">
+          <h2>Market briefing unavailable</h2>
+          <p>
+            The briefing is configured but couldn't be generated right now.
+            Reload the page to try again.
+          </p>
+          <p className="briefing-error-detail">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

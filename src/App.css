@@ -1714,6 +1714,38 @@ body, html, #root {
   font-size: 14px;
 }
 
+.briefing-error {
+  padding: 40px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.briefing-error h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.briefing-error p {
+  margin: 0 auto;
+  max-width: 480px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.briefing-error-detail {
+  margin-top: 16px !important;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--down);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px !important;
+  color: var(--down) !important;
+  word-break: break-word;
+}
+
 .briefing-eyebrow {
   font-size: 12px;
   text-transform: uppercase;
