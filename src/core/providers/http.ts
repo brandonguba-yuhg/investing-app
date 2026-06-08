@@ -3,6 +3,7 @@ import type {
   AIAnalysis,
   AIAnswer,
   CompanyProfile,
+  DividendInfo,
   Financials,
   History,
   HistoryRange,
@@ -117,5 +118,9 @@ export class HttpProvider implements FinancialDataProvider {
       ? `?watchlist=${encodeURIComponent(watchlist.join(","))}`
       : "";
     return this.get<UpcomingEvents>(`/api/events${q}`);
+  }
+
+  getDividends(symbol: Ticker): Promise<DividendInfo> {
+    return this.get<DividendInfo>(`/api/dividends/${encodeURIComponent(symbol)}`);
   }
 }

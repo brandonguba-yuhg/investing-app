@@ -2,6 +2,7 @@ import type {
   AIAnalysis,
   AIAnswer,
   CompanyProfile,
+  DividendInfo,
   Financials,
   History,
   HistoryRange,
@@ -29,6 +30,7 @@ export interface FinancialDataProvider {
   ask(symbol: Ticker, question: string): Promise<AIAnswer>;
   getBriefing(): Promise<MarketBriefing>;
   getUpcomingEvents(watchlist?: Ticker[]): Promise<UpcomingEvents>;
+  getDividends(symbol: Ticker): Promise<DividendInfo>;
 }
 
 export class ProviderError extends Error {

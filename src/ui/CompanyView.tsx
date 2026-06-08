@@ -18,6 +18,7 @@ import { CompanyCharts } from "./CompanyCharts";
 import { CompanyMultiples } from "./CompanyMultiples";
 import { CompanyScores } from "./CompanyScores";
 import { CompanyValuation } from "./CompanyValuation";
+import { DividendCard } from "./DividendCard";
 // Vaulted: notes feature kept on disk but not wired into the UI.
 // import { CompanyNotes } from "./CompanyNotes";
 import { NewsFeed } from "./NewsFeed";
@@ -224,6 +225,8 @@ export function CompanyView({ symbol }: Props) {
             <Stat label="52w Range" value={`${formatCurrency(quote.yearLow, currency)} – ${formatCurrency(quote.yearHigh, currency)}`} />
             <Stat label="Volume" value={formatLargeNumber(quote.volume)} />
           </section>
+
+          <DividendCard symbol={profile.symbol} price={quote.price} currency={currency} />
 
           {profile.description && (
             <details className="collapsible">

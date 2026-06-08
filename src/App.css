@@ -257,6 +257,91 @@ body, html, #root {
   font-weight: 500;
 }
 
+/* Dividend card */
+.dividend-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dividend-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dividend-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dividend-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.dividend-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dividend-stat-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dividend-stat-value {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.dividend-stat-value.accent {
+  color: var(--accent);
+}
+
+.dividend-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dividend-history-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dividend-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dividend-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dividend-chip-date {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
 /* Description */
 .description {
   background: var(--surface);
@@ -632,6 +717,133 @@ body, html, #root {
 .ps-pct {
   font-size: 13px;
   font-weight: 400;
+}
+
+/* Portfolio insights: sector allocation + concentration flags */
+.portfolio-insights {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.pi-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pi-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pi-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pi-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pi-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.pi-bar-name {
+  color: var(--text);
+}
+
+.pi-bar-pct {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pi-bar-track {
+  height: 7px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.pi-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.pi-income {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.pi-income-label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.pi-income-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pi-income-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--up);
+  font-variant-numeric: tabular-nums;
+}
+
+.pi-flags {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pi-flags li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.pi-flags li::before {
+  content: "!";
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--down) 18%, transparent);
+  color: var(--down);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 /* Dashboard card: position info */
@@ -1207,14 +1419,100 @@ body, html, #root {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  cursor: help;
 }
 
 .multi-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+/* Plain-English metric explanations (InfoTip) */
+.infotip {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.infotip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1;
+  cursor: help;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.infotip-btn:hover,
+.infotip-btn:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.infotip-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 240px;
+  max-width: 70vw;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+  pointer-events: none;
+}
+
+.infotip:hover .infotip-pop,
+.infotip:focus-within .infotip-pop {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.infotip-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.infotip-plain {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.infotip-typical {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
 }
 
 .multi-value {

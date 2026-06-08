@@ -8,6 +8,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import * as ai from "./ai.js";
 import { cache, TTL } from "./cache.js";
 import * as data from "./data.js";
+import * as dividends from "./dividends.js";
 import * as events from "./events.js";
 
 const app = express();
@@ -220,6 +221,17 @@ app.get("/api/scores/:symbol", async (req, res, next) => {
     const out = await cache.wrap(`scores:${symbol}`, TTL.scores, () =>
       data.getScores(symbol),
     );
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.get("/api/dividends/:symbol", async (req, res, next) => {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+    // getDividendInfo caches internally (TTL.dividends).
+    const out = await dividends.getDividendInfo(symbol);
     res.json(out);
   } catch (e) {
     next(e);

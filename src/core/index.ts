@@ -21,6 +21,8 @@ export type {
   EventCategory,
   UpcomingEvent,
   UpcomingEvents,
+  DividendPayment,
+  DividendInfo,
 } from "./types";
 export { ProviderError, type FinancialDataProvider } from "./provider";
 export { FmpProvider } from "./providers/fmp";

@@ -193,6 +193,35 @@ export interface UpcomingEvents {
   events: UpcomingEvent[];
 }
 
+export interface DividendPayment {
+  /** Ex-dividend date (YYYY-MM-DD) — own the stock before this to get paid. */
+  exDate: string;
+  /** When the cash actually lands (YYYY-MM-DD), when known. */
+  paymentDate?: string;
+  /** Dividend per share for this payment. */
+  amount: number;
+}
+
+export interface DividendInfo {
+  symbol: Ticker;
+  /** False when the company doesn't currently pay a dividend. */
+  paysDividend: boolean;
+  /** "Quarterly", "Monthly", "Annual", etc. when known. */
+  frequency?: string;
+  /** Per-share dividend annualized at the current run-rate (latest × frequency). */
+  forwardAnnual?: number;
+  /** Per-share dividends actually paid over the trailing 12 months. */
+  ttmDividend?: number;
+  /** Most recent ex-dividend date (YYYY-MM-DD). */
+  lastExDate?: string;
+  /** Most recent payment date (YYYY-MM-DD). */
+  lastPaymentDate?: string;
+  /** Next ex-dividend date (YYYY-MM-DD) when a future one has been declared. */
+  nextExDate?: string;
+  /** Recent payments, most recent first. */
+  history: DividendPayment[];
+}
+
 export interface Multiples {
   marketCap?: number;
   enterpriseValue?: number;

@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatCurrency, formatLargeNumber, formatPercent } from "../core/format";
-import { portfolioTotals, positionStats } from "../core/portfolio";
+import {
+  portfolioBreakdown,
+  portfolioTotals,
+  positionStats,
+  type PortfolioBreakdown,
+} from "../core/portfolio";
 import type { Quote, Ticker } from "../core/types";
 import type { WatchlistEntry } from "../core/watchlist";
 import { useProvider } from "./providerContext";
@@ -21,6 +26,23 @@ export function Dashboard({ onSelect }: Props) {
   const watchlist = useWatchlist();
   const [cards, setCards] = useState<CardState[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sectors, setSectors] = useState<Record<string, string>>({});
+  // symbol -> forward annual dividend per share (only for payers)
+  const [divPerShare, setDivPerShare] = useState<Record<string, number>>({});
+
+  // Symbols that represent a real position (shares + cost). Sector allocation
+  // only makes sense for these, so we only fetch profiles for them.
+  const positionedSymbols = useMemo(
+    () =>
+      watchlist.entries
+        .filter((e) => e.shares && e.costBasis)
+        .map((e) => e.symbol),
+    [watchlist.entries],
+  );
+  const positionedKey = useMemo(
+    () => [...positionedSymbols].sort().join(","),
+    [positionedSymbols],
+  );
 
   useEffect(() => {
     if (watchlist.tickers.length === 0) {
@@ -54,6 +76,46 @@ export function Dashboard({ onSelect }: Props) {
     };
   }, [watchlist.tickers, provider]);
 
+  // For positioned holdings, fetch sector (for allocation) and dividend
+  // run-rate (for projected income). Both are cached server-side, so this is
+  // cheap and only runs when the set of positioned symbols changes.
+  useEffect(() => {
+    if (positionedSymbols.length === 0) {
+      setSectors({});
+      setDivPerShare({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      positionedSymbols.map(async (symbol) => {
+        const [profile, dividend] = await Promise.all([
+          provider.getProfile(symbol).catch(() => undefined),
+          provider.getDividends(symbol).catch(() => undefined),
+        ]);
+        return {
+          symbol,
+          sector: profile?.sector,
+          annual: dividend?.paysDividend ? dividend.forwardAnnual : undefined,
+        };
+      }),
+    ).then((rows) => {
+      if (cancelled) return;
+      const nextSectors: Record<string, string> = {};
+      const nextDiv: Record<string, number> = {};
+      for (const r of rows) {
+        if (r.sector) nextSectors[r.symbol] = r.sector;
+        if (r.annual && r.annual > 0) nextDiv[r.symbol] = r.annual;
+      }
+      setSectors(nextSectors);
+      setDivPerShare(nextDiv);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // positionedKey is a stable string of the positioned symbols.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positionedKey, provider]);
+
   const quotesBySymbol = useMemo(() => {
     const out: Record<string, Quote | undefined> = {};
     for (const c of cards) out[c.symbol] = c.quote;
@@ -64,6 +126,24 @@ export function Dashboard({ onSelect }: Props) {
     () => portfolioTotals(watchlist.entries, quotesBySymbol),
     [watchlist.entries, quotesBySymbol],
   );
+
+  const breakdown = useMemo(
+    () => portfolioBreakdown(watchlist.entries, quotesBySymbol, sectors),
+    [watchlist.entries, quotesBySymbol, sectors],
+  );
+
+  const income = useMemo(() => {
+    let annual = 0;
+    let payers = 0;
+    for (const e of watchlist.entries) {
+      const perShare = e.shares ? divPerShare[e.symbol] : undefined;
+      if (e.shares && perShare) {
+        annual += e.shares * perShare;
+        payers += 1;
+      }
+    }
+    return { annual, payers };
+  }, [watchlist.entries, divPerShare]);
 
   if (watchlist.tickers.length === 0) {
     return (
@@ -79,6 +159,10 @@ export function Dashboard({ onSelect }: Props) {
   return (
     <div className="dashboard">
       {totals.positionsCount > 0 && <PortfolioSummary totals={totals} />}
+
+      {breakdown && breakdown.holdingsCount >= 2 && (
+        <PortfolioInsights breakdown={breakdown} income={income} />
+      )}
 
       <div className="dashboard-header">
         <h2>Watchlist</h2>
@@ -143,6 +227,83 @@ function PortfolioSummary({
           {formatCurrency(totals.dayChange, "USD")}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PortfolioInsights({
+  breakdown,
+  income,
+}: {
+  breakdown: PortfolioBreakdown;
+  income: { annual: number; payers: number };
+}) {
+  const { bySector, byHolding, topHoldingPct, holdingsCount, sectorsCount } = breakdown;
+  const topHolding = byHolding[0];
+  const topSector = bySector[0];
+
+  // Gentle, informational concentration flags — not advice.
+  const flags: string[] = [];
+  if (topHolding && topHoldingPct >= 25) {
+    flags.push(
+      `${topHolding.key} is ${topHoldingPct.toFixed(0)}% of your portfolio — a large single-stock position.`,
+    );
+  }
+  if (topSector && topSector.pct >= 50 && sectorsCount > 1) {
+    flags.push(
+      `${topSector.key} makes up ${topSector.pct.toFixed(0)}% of your holdings — heavily weighted to one sector.`,
+    );
+  }
+  if (holdingsCount < 5) {
+    flags.push(
+      `Only ${holdingsCount} position${holdingsCount === 1 ? "" : "s"} with cost basis set — a small number of stocks carries more single-name risk.`,
+    );
+  }
+
+  return (
+    <div className="portfolio-insights">
+      <div className="pi-head">
+        <h3>Allocation</h3>
+        <span className="pi-sub">
+          {holdingsCount} holding{holdingsCount === 1 ? "" : "s"} · {sectorsCount} sector
+          {sectorsCount === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <div className="pi-bars">
+        {bySector.map((s) => (
+          <div className="pi-bar-row" key={s.key}>
+            <div className="pi-bar-label">
+              <span className="pi-bar-name">{s.key}</span>
+              <span className="pi-bar-pct">{s.pct.toFixed(0)}%</span>
+            </div>
+            <div className="pi-bar-track">
+              <div className="pi-bar-fill" style={{ width: `${Math.max(s.pct, 2)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {income.payers > 0 && (
+        <div className="pi-income">
+          <div>
+            <span className="pi-income-label">Est. annual dividend income</span>
+            <span className="pi-income-sub">
+              {" "}
+              from {income.payers} holding{income.payers === 1 ? "" : "s"}
+            </span>
+          </div>
+          <span className="pi-income-value">{formatCurrency(income.annual, "USD")}</span>
+        </div>
+      )}
+
+      {flags.length > 0 && (
+        <ul className="pi-flags">
+          {flags.map((f, i) => (
+            <li key={i}>{f}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

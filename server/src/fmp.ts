@@ -240,6 +240,21 @@ export async function getEarningsCalendar(from: string, to: string): Promise<Ear
     }));
 }
 
+export interface DividendRaw {
+  symbol?: string;
+  date?: string; // ex-dividend date
+  paymentDate?: string;
+  dividend?: number;
+  adjDividend?: number;
+  frequency?: string;
+}
+
+/** Free-tier dividend history for a symbol (most recent first). */
+export async function getDividends(symbol: Ticker): Promise<DividendRaw[]> {
+  const raw = await fetchJson<DividendRaw[]>("/dividends", { symbol });
+  return raw ?? [];
+}
+
 interface IncomeRaw {
   date: string;
   revenue: number;

@@ -5,6 +5,7 @@ import type {
   BalanceSheet,
   CashFlowStatement,
   CompanyProfile,
+  DividendInfo,
   Financials,
   History,
   HistoryRange,
@@ -179,6 +180,10 @@ export class FmpProvider implements FinancialDataProvider {
 
   async getUpcomingEvents(_watchlist?: Ticker[]): Promise<UpcomingEvents> {
     throw new ProviderError("Upcoming events require the backend provider.", 501);
+  }
+
+  async getDividends(_symbol: Ticker): Promise<DividendInfo> {
+    throw new ProviderError("Dividend data requires the backend provider.", 501);
   }
 
   async getMultiples(symbol: Ticker): Promise<Multiples> {

@@ -49,4 +49,5 @@ export const TTL = {
   analysis: 24 * 60 * 60 * 1000, // 24 hours — AI analysis is costly; cache hard
   briefing: 24 * 60 * 60 * 1000, // 24 hours — once-daily market briefing
   events: 12 * 60 * 60 * 1000,   // 12 hours — static macro + slow-moving earnings
+  dividends: 12 * 60 * 60 * 1000, // 12 hours — dividend schedules change rarely
 } as const;
