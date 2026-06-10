@@ -5,6 +5,7 @@
 // Free tier endpoints (/stable/*). No price-history or news on the free tier,
 // so getHistory/getNews are intentionally absent — those stay Yahoo-only.
 
+import { computeScores, type FundamentalRow } from "./scores.js";
 import type {
   BalanceSheet,
   CashFlowStatement,
@@ -13,6 +14,7 @@ import type {
   IncomeStatement,
   Multiples,
   Period,
+  QualityScores,
   Quote,
   SearchResult,
   Ticker,
@@ -213,6 +215,46 @@ export async function getMultiples(symbol: Ticker): Promise<Multiples> {
   };
 }
 
+/**
+ * Quality scores from FMP's full annual statements. This is the production
+ * path: Yahoo's fundamentals (the primary source) are IP-blocked on Railway,
+ * so without this every stock showed "scores unavailable".
+ */
+export async function getScores(symbol: Ticker): Promise<QualityScores> {
+  const params = { symbol, limit: "2", period: "annual" };
+  const [incomeRaw, balanceRaw, cashRaw, quote] = await Promise.all([
+    fetchJson<IncomeRaw[]>("/income-statement", params),
+    fetchJson<BalanceRaw[]>("/balance-sheet-statement", params),
+    fetchJson<CashRaw[]>("/cash-flow-statement", params),
+    getQuote(symbol).catch(() => null),
+  ]);
+
+  const toRow = (i: number): FundamentalRow | undefined => {
+    const inc = incomeRaw?.[i];
+    const bal = balanceRaw?.[i];
+    const cf = cashRaw?.[i];
+    if (!inc || !bal) return undefined;
+    return {
+      date: inc.date,
+      netIncome: inc.netIncome ?? 0,
+      totalAssets: bal.totalAssets ?? 0,
+      operatingCashFlow:
+        cf?.netCashProvidedByOperatingActivities ?? cf?.operatingCashFlow ?? 0,
+      longTermDebt: bal.longTermDebt ?? 0,
+      currentAssets: bal.totalCurrentAssets ?? 0,
+      currentLiabilities: bal.totalCurrentLiabilities ?? 0,
+      grossProfit: inc.grossProfit ?? 0,
+      revenue: inc.revenue ?? 0,
+      ebit: inc.operatingIncome ?? 0,
+      retainedEarnings: bal.retainedEarnings ?? 0,
+      totalLiabilities: bal.totalLiabilities ?? 0,
+      sharesOutstanding: inc.weightedAverageShsOutDil ?? inc.weightedAverageShsOut ?? 0,
+    };
+  };
+
+  return computeScores(toRow(0), toRow(1), quote?.marketCap);
+}
+
 export interface EarningsEvent {
   symbol: Ticker;
   date: string; // YYYY-MM-DD
@@ -263,6 +305,8 @@ interface IncomeRaw {
   operatingIncome: number;
   netIncome: number;
   eps: number;
+  weightedAverageShsOut?: number;
+  weightedAverageShsOutDil?: number;
 }
 interface BalanceRaw {
   date: string;
@@ -271,6 +315,10 @@ interface BalanceRaw {
   totalStockholdersEquity: number;
   cashAndCashEquivalents: number;
   totalDebt: number;
+  totalCurrentAssets?: number;
+  totalCurrentLiabilities?: number;
+  longTermDebt?: number;
+  retainedEarnings?: number;
 }
 interface CashRaw {
   date: string;
