@@ -38,6 +38,7 @@ export function CompanyView({ symbol }: Props) {
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [financials, setFinancials] = useState<Financials | null>(null);
+  const [finUnavailable, setFinUnavailable] = useState(false);
   const [multiples, setMultiples] = useState<Multiples | null>(null);
   const [period, setPeriod] = useState<Period>("annual");
   const [view, setView] = useState<View>("overview");
@@ -52,7 +53,9 @@ export function CompanyView({ symbol }: Props) {
   const [retryKey, setRetryKey] = useState(0);
   const watchlist = useWatchlist();
 
-  // Primary load: profile + quote + financials. Multiples is lazy (below).
+  // Primary load: profile + quote gate the page. Financials load separately
+  // below — some symbols have no statements on the free data sources, and that
+  // shouldn't take down the quote, chart, and profile that DO work.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -61,16 +64,11 @@ export function CompanyView({ symbol }: Props) {
     setMultiplesError(null);
     setScores(null);
     setScoresError(null);
-    Promise.all([
-      provider.getProfile(symbol),
-      provider.getQuote(symbol),
-      provider.getFinancials(symbol, period, 5),
-    ])
-      .then(([p, q, f]) => {
+    Promise.all([provider.getProfile(symbol), provider.getQuote(symbol)])
+      .then(([p, q]) => {
         if (cancelled) return;
         setProfile(p);
         setQuote(q);
-        setFinancials(f);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -78,6 +76,24 @@ export function CompanyView({ symbol }: Props) {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, provider, retryKey]);
+
+  // Financial statements: non-fatal. Re-fetched when the period toggles.
+  useEffect(() => {
+    let cancelled = false;
+    setFinancials(null);
+    setFinUnavailable(false);
+    provider
+      .getFinancials(symbol, period, 5)
+      .then((f) => {
+        if (!cancelled) setFinancials(f);
+      })
+      .catch(() => {
+        if (!cancelled) setFinUnavailable(true);
       });
     return () => {
       cancelled = true;
@@ -150,11 +166,11 @@ export function CompanyView({ symbol }: Props) {
       </div>
     );
   }
-  if (!profile || !quote || !financials) return null;
+  if (!profile || !quote) return null;
 
   const currency = profile.currency ?? "USD";
   const positive = quote.change >= 0;
-  const latestEps = financials.income[0]?.eps;
+  const latestEps = financials?.income[0]?.eps;
   const pe =
     latestEps && latestEps !== 0 ? quote.price / latestEps : undefined;
   const saved = watchlist.has(profile.symbol);
@@ -246,28 +262,40 @@ export function CompanyView({ symbol }: Props) {
               {saved && <CompanyNotes symbol={profile.symbol} />}
           */}
 
-          <section className="financials">
-            <div className="financials-controls">
-              <div className="tabs">
-                <TabButton active={statement === "income"} onClick={() => setStatement("income")}>Income</TabButton>
-                <TabButton active={statement === "balance"} onClick={() => setStatement("balance")}>Balance Sheet</TabButton>
-                <TabButton active={statement === "cashflow"} onClick={() => setStatement("cashflow")}>Cash Flow</TabButton>
+          {financials ? (
+            <section className="financials">
+              <div className="financials-controls">
+                <div className="tabs">
+                  <TabButton active={statement === "income"} onClick={() => setStatement("income")}>Income</TabButton>
+                  <TabButton active={statement === "balance"} onClick={() => setStatement("balance")}>Balance Sheet</TabButton>
+                  <TabButton active={statement === "cashflow"} onClick={() => setStatement("cashflow")}>Cash Flow</TabButton>
+                </div>
+                <PeriodToggle period={period} onChange={setPeriod} />
               </div>
-              <PeriodToggle period={period} onChange={setPeriod} />
-            </div>
 
-            {statement === "income" && <IncomeTable rows={financials.income} />}
-            {statement === "balance" && <BalanceTable rows={financials.balance} />}
-            {statement === "cashflow" && <CashFlowTable rows={financials.cashFlow} />}
-          </section>
+              {statement === "income" && <IncomeTable rows={financials.income} />}
+              {statement === "balance" && <BalanceTable rows={financials.balance} />}
+              {statement === "cashflow" && <CashFlowTable rows={financials.cashFlow} />}
+            </section>
+          ) : finUnavailable ? (
+            <FinancialsUnavailable />
+          ) : (
+            <div className="loading">Loading financial statements…</div>
+          )}
         </>
       ) : view === "charts" ? (
-        <>
-          <div className="charts-controls">
-            <PeriodToggle period={period} onChange={setPeriod} />
-          </div>
-          <CompanyCharts financials={financials} period={period} />
-        </>
+        financials ? (
+          <>
+            <div className="charts-controls">
+              <PeriodToggle period={period} onChange={setPeriod} />
+            </div>
+            <CompanyCharts financials={financials} period={period} />
+          </>
+        ) : finUnavailable ? (
+          <FinancialsUnavailable />
+        ) : (
+          <div className="loading">Loading financial statements…</div>
+        )
       ) : view === "multiples" ? (
         multiples ? (
           <CompanyMultiples multiples={multiples} />
@@ -313,9 +341,18 @@ export function CompanyView({ symbol }: Props) {
             </div>
           ) : null}
 
-          <CompanyValuation financials={financials} quote={quote} />
+          {financials && <CompanyValuation financials={financials} quote={quote} />}
         </div>
       )}
+    </div>
+  );
+}
+
+function FinancialsUnavailable() {
+  return (
+    <div className="loading">
+      Financial statements aren't available for this symbol from the app's data
+      sources, but quotes, charts, and news above still work.
     </div>
   );
 }
