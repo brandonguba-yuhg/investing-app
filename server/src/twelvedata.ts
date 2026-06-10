@@ -21,20 +21,36 @@ import type {
 
 const BASE = "https://api.twelvedata.com";
 
-export function tdEnabled(): boolean {
-  return Boolean(process.env.TWELVE_DATA_API_KEY);
+// Trim defensively: a key pasted into Railway with a stray space/newline or
+// wrapping quotes silently turns every request into a 401.
+function apiKey(): string {
+  return (process.env.TWELVE_DATA_API_KEY ?? "").trim().replace(/^["']|["']$/g, "");
 }
 
-// Twelve Data signals errors as HTTP 200 with {status:"error", code, message}.
+export function tdEnabled(): boolean {
+  return Boolean(apiKey());
+}
+
+// Twelve Data signals errors as HTTP 200 with {status:"error", code, message},
+// but auth failures arrive as real HTTP 401s with a JSON body.
 async function fetchJson<T>(path: string, params: Record<string, string>): Promise<T> {
-  const key = process.env.TWELVE_DATA_API_KEY;
+  const key = apiKey();
   if (!key) throw new Error("TWELVE_DATA_API_KEY is not set");
   const url = new URL(`${BASE}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   url.searchParams.set("apikey", key);
 
   const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`Twelve Data request failed (${res.status}): ${res.statusText}`);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const text = await res.text();
+      if (text) detail = `${detail} — ${text.slice(0, 200)}`;
+    } catch {
+      // ignore
+    }
+    throw new Error(`Twelve Data request failed (${res.status}): ${detail}`);
+  }
   const body = (await res.json()) as T & { status?: string; code?: number; message?: string };
   if (body && typeof body === "object" && body.status === "error") {
     throw new Error(`Twelve Data error (${body.code ?? "?"}): ${body.message ?? "unknown"}`);
