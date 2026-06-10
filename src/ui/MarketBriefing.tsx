@@ -27,22 +27,38 @@ function cleanErrorMessage(raw: string): string {
   return raw.replace(/^Backend \d+:\s*/, "");
 }
 
+// How long to wait before re-checking when the backend is still generating
+// today's briefing in the background.
+const PREPARING_RETRY_MS = 6000;
+
 export function MarketBriefing({ fallback }: Props) {
   const provider = useProvider();
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [loading, setLoading] = useState(true);
+  const [preparing, setPreparing] = useState(false);
   const [notConfigured, setNotConfigured] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bump to re-run the fetch effect (used to poll while the briefing is preparing).
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     setLoading(true);
     setNotConfigured(false);
     setError(null);
     provider
       .getBriefing()
       .then((b) => {
-        if (!cancelled) setBriefing(b);
+        if (cancelled) return;
+        if (b.preparing) {
+          // Backend is still building today's briefing — show a notice and poll.
+          setPreparing(true);
+          retry = setTimeout(() => setAttempt((n) => n + 1), PREPARING_RETRY_MS);
+        } else {
+          setPreparing(false);
+          setBriefing(b);
+        }
       })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -58,8 +74,9 @@ export function MarketBriefing({ fallback }: Props) {
       });
     return () => {
       cancelled = true;
+      if (retry) clearTimeout(retry);
     };
-  }, [provider]);
+  }, [provider, attempt]);
 
   if (notConfigured) return <>{fallback}</>;
 
@@ -78,11 +95,13 @@ export function MarketBriefing({ fallback }: Props) {
     );
   }
 
-  if (loading) {
+  if (loading || preparing) {
     return (
       <div className="briefing">
         <div className="briefing-loading">
-          Building today's market briefing…
+          {preparing
+            ? "Preparing today's market briefing… this updates automatically."
+            : "Building today's market briefing…"}
         </div>
       </div>
     );

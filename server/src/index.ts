@@ -6,6 +6,7 @@ dotenv.config({ override: true });
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import * as ai from "./ai.js";
+import * as briefingStore from "./briefing-store.js";
 import { cache, TTL } from "./cache.js";
 import * as data from "./data.js";
 import * as dividends from "./dividends.js";
@@ -145,20 +146,31 @@ function askRateLimited(ip: string): boolean {
   return hits.length > ASK_MAX;
 }
 
-app.get("/api/briefing", async (_req, res, next) => {
-  try {
-    if (!ai.aiEnabled()) {
-      return res.status(503).json({ error: "AI briefing is not configured." });
-    }
-    // Cache key includes the date so it rolls over to a fresh briefing daily.
-    const today = new Date().toISOString().slice(0, 10);
-    const out = await cache.wrap(`briefing:${today}`, TTL.briefing, () =>
-      ai.getMarketBriefing(),
-    );
-    res.json(out);
-  } catch (e) {
-    next(e);
+app.get("/api/briefing", (_req, res) => {
+  if (!ai.aiEnabled()) {
+    return res.status(503).json({ error: "AI briefing is not configured." });
   }
+  // The briefing store keeps a warm copy (regenerated on boot + every 6h), so we
+  // never block a request on the multi-minute web-search run. Serve whatever we
+  // have immediately; if it's stale (a previous day's), trigger a background
+  // refresh so the next load is current.
+  const cached = briefingStore.getCurrent();
+  if (cached) {
+    if (!briefingStore.isFresh()) briefingStore.ensureFresh();
+    return res.json(cached);
+  }
+  // Nothing cached yet (cold start before the first generation finished). Kick
+  // off generation and tell the client we're preparing so it can retry shortly.
+  briefingStore.ensureFresh();
+  return res.json({
+    date: new Date().toISOString().slice(0, 10),
+    headline: "",
+    overview: "",
+    items: [],
+    generatedAt: "",
+    model: "",
+    preparing: true,
+  });
 });
 
 app.get("/api/events", async (req, res, next) => {
@@ -264,4 +276,7 @@ app.listen(PORT, () => {
   } else {
     console.log("CORS: localhost only (set ALLOWED_ORIGINS to add prod domains)");
   }
+  // Warm the daily briefing in the background so visitors hit a ready cache
+  // instead of triggering a multi-minute live generation.
+  void briefingStore.loadFromDisk().then(() => briefingStore.startScheduler());
 });

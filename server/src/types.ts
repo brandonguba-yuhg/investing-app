@@ -171,6 +171,12 @@ export interface MarketBriefing {
   sources?: { title: string; url: string }[];
   generatedAt: string;
   model: string;
+  /**
+   * True when today's briefing isn't ready yet and is being generated in the
+   * background. The other fields are empty placeholders; the client should show
+   * a "preparing" state and retry shortly.
+   */
+  preparing?: boolean;
 }
 
 export type EventCategory = "macro" | "earnings";
