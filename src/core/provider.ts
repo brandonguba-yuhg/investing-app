@@ -6,10 +6,13 @@ import type {
   Financials,
   History,
   HistoryRange,
+  InvestorProfile,
   MarketBriefing,
   Multiples,
   NewsItem,
   Period,
+  PortfolioPosition,
+  PositionAnalysis,
   QualityScores,
   Quote,
   SearchResult,
@@ -31,6 +34,11 @@ export interface FinancialDataProvider {
   getBriefing(): Promise<MarketBriefing>;
   getUpcomingEvents(watchlist?: Ticker[]): Promise<UpcomingEvents>;
   getDividends(symbol: Ticker): Promise<DividendInfo>;
+  getPositionAnalysis(
+    symbol: Ticker,
+    portfolio: PortfolioPosition[],
+    profile: InvestorProfile | null,
+  ): Promise<PositionAnalysis>;
 }
 
 export class ProviderError extends Error {

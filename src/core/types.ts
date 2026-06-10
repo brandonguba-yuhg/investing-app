@@ -228,6 +228,47 @@ export interface DividendInfo {
   history: DividendPayment[];
 }
 
+// ---------- investor profile & position analysis ----------
+
+export type RiskTolerance = "conservative" | "balanced" | "aggressive";
+export type InvestmentHorizon = "short" | "medium" | "long";
+export type InvestmentFocus = "income" | "growth" | "mixed";
+export type DiversificationStyle = "concentrated" | "balanced" | "diversified";
+
+/** The user's stated preferences from onboarding; shapes AI framing and flags. */
+export interface InvestorProfile {
+  riskTolerance: RiskTolerance;
+  horizon: InvestmentHorizon;
+  focus: InvestmentFocus;
+  diversification: DiversificationStyle;
+  /** Sectors the user wants to lean into. Empty = no preference. */
+  preferredSectors: string[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+/** One holding's weight, sent as context for position analysis. */
+export interface PortfolioPosition {
+  symbol: Ticker;
+  weightPct: number;
+  sector?: string;
+}
+
+/** AI assessment of a single position in the context of the whole portfolio. */
+export interface PositionAnalysis {
+  symbol: Ticker;
+  summary: string;
+  bullCase: string[];
+  bearCase: string[];
+  riskLevel: "low" | "moderate" | "elevated" | "high";
+  /** How the position fits the user's stated profile. */
+  fitNotes: string;
+  /** Effect on portfolio concentration / diversification. */
+  portfolioImpact: string;
+  generatedAt: string;
+  model: string;
+}
+
 export interface Multiples {
   marketCap?: number;
   enterpriseValue?: number;

@@ -227,6 +227,57 @@ app.post("/api/ask/:symbol", async (req, res, next) => {
   }
 });
 
+app.post("/api/position-analysis", async (req, res, next) => {
+  try {
+    if (!ai.aiEnabled()) {
+      return res.status(503).json({ error: "AI is not configured." });
+    }
+    const ip = req.ip ?? "unknown";
+    if (askRateLimited(ip)) {
+      return res.status(429).json({ error: "Too many requests. Wait a minute and try again." });
+    }
+    const body = req.body as {
+      symbol?: unknown;
+      portfolio?: unknown;
+      profile?: unknown;
+    };
+    const symbol = String(body?.symbol ?? "").trim().toUpperCase();
+    if (!symbol || symbol.length > 12) {
+      return res.status(400).json({ error: "Missing or invalid symbol." });
+    }
+    const portfolio = (Array.isArray(body.portfolio) ? body.portfolio : [])
+      .filter(
+        (p): p is { symbol: string; weightPct: number; sector?: string } =>
+          p != null &&
+          typeof p === "object" &&
+          typeof (p as { symbol?: unknown }).symbol === "string" &&
+          typeof (p as { weightPct?: unknown }).weightPct === "number",
+      )
+      .slice(0, 50)
+      .map((p) => ({
+        symbol: p.symbol.toUpperCase(),
+        weightPct: p.weightPct,
+        sector: typeof p.sector === "string" ? p.sector : undefined,
+      }));
+    const profile =
+      body.profile && typeof body.profile === "object"
+        ? (body.profile as Parameters<typeof ai.getPositionAnalysis>[2])
+        : null;
+
+    // Cache on the facts that change the answer: the symbol, its weight bucket
+    // (5% steps), and the profile's risk/focus. Saves Opus tokens on retries.
+    const weight = portfolio.find((p) => p.symbol === symbol)?.weightPct ?? 0;
+    const bucket = Math.round(weight / 5) * 5;
+    const key = `posanalysis:${symbol}:${bucket}:${profile?.riskTolerance ?? "-"}:${profile?.focus ?? "-"}:${profile?.diversification ?? "-"}`;
+    const out = await cache.wrap(key, TTL.analysis, () =>
+      ai.getPositionAnalysis(symbol, portfolio, profile),
+    );
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
 app.get("/api/scores/:symbol", async (req, res, next) => {
   try {
     const symbol = req.params.symbol.toUpperCase();

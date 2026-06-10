@@ -2436,3 +2436,296 @@ body, html, #root {
     max-width: 140px;
   }
 }
+
+/* ---------- Investor profile onboarding quiz ---------- */
+.quiz {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.quiz-head h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.quiz-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.quiz-q-label {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.quiz-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quiz-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.quiz-chip:hover {
+  border-color: var(--accent);
+}
+
+.quiz-chip.on {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+.quiz-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---------- Allocation wheel ---------- */
+.alloc-wheel {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.alloc-wheel-svg {
+  width: 180px;
+  height: 180px;
+  flex-shrink: 0;
+}
+
+.alloc-wheel-svg circle {
+  cursor: pointer;
+  transition: opacity 0.15s, stroke-width 0.15s;
+}
+
+.alloc-center-label {
+  fill: var(--text);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.alloc-center-sub {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.alloc-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+  flex: 1;
+}
+
+.alloc-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: default;
+  transition: opacity 0.15s;
+}
+
+.alloc-legend-row.dim {
+  opacity: 0.45;
+}
+
+.alloc-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.alloc-name {
+  flex: 1;
+}
+
+.alloc-pct {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Profile button in insights header ---------- */
+.pi-profile-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.pi-profile-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ---------- AI position analysis card ---------- */
+.pos-analysis {
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pos-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pos-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pos-title h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pos-title-sub {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.pos-risk {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.pos-risk-low { color: var(--up); border-color: color-mix(in srgb, var(--up) 50%, transparent); }
+.pos-risk-moderate { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.pos-risk-elevated { color: #f7b84f; border-color: color-mix(in srgb, #f7b84f 50%, transparent); }
+.pos-risk-high { color: var(--down); border-color: color-mix(in srgb, var(--down) 50%, transparent); }
+
+.pos-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+}
+
+.pos-close:hover {
+  color: var(--text);
+}
+
+.pos-summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.pos-error {
+  color: var(--down);
+  font-size: 13px;
+}
+
+.pos-notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.pos-note {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.pos-note-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.pos-note p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pos-cases {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.pos-case-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.pos-case-label.up-text { color: var(--up); }
+.pos-case-label.down-text { color: var(--down); }
+
+.pos-case ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pos-foot {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Analyze button on dashboard cards */
+.card-analyze {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+}
+
+.card-analyze:hover {
+  opacity: 0.8;
+}

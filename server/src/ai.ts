@@ -1,5 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AIAnalysis, AIAnswer, MarketBriefing, Ticker } from "./types.js";
+import type {
+  AIAnalysis,
+  AIAnswer,
+  InvestorProfile,
+  MarketBriefing,
+  PortfolioPosition,
+  PositionAnalysis,
+  Ticker,
+} from "./types.js";
 import {
   getFinancials,
   getMultiples,
@@ -156,6 +164,114 @@ export async function getAnalysis(symbol: Ticker): Promise<AIAnalysis> {
     summary: parsed.summary,
     bullCase: parsed.bullCase ?? [],
     bearCase: parsed.bearCase ?? [],
+    generatedAt: new Date().toISOString(),
+    model: MODEL,
+  };
+}
+
+/**
+ * Assess one position in the context of the user's whole portfolio and stated
+ * preferences. Powers the "you just added a stock" coaching flow on the
+ * Dashboard.
+ */
+export async function getPositionAnalysis(
+  symbol: Ticker,
+  portfolio: PortfolioPosition[],
+  profile: InvestorProfile | null,
+): Promise<PositionAnalysis> {
+  const context = await buildContext(symbol);
+
+  const portfolioBlock = portfolio
+    .map((p) => `${p.symbol}: ${p.weightPct.toFixed(1)}%${p.sector ? ` (${p.sector})` : ""}`)
+    .join("\n");
+  const profileBlock = profile
+    ? [
+        `Risk tolerance: ${profile.riskTolerance}`,
+        `Time horizon: ${profile.horizon}`,
+        `Focus: ${profile.focus}`,
+        `Diversification style: ${profile.diversification}`,
+        profile.preferredSectors.length
+          ? `Preferred sectors: ${profile.preferredSectors.join(", ")}`
+          : "Preferred sectors: no preference",
+      ].join("\n")
+    : "No stated preferences (treat as a balanced, long-term retail investor).";
+
+  const message = await getClient().messages.create({
+    model: MODEL,
+    max_tokens: 4000,
+    thinking: { type: "adaptive" },
+    output_config: {
+      effort: "medium",
+      format: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            summary: {
+              type: "string",
+              description:
+                "2-3 sentences assessing this position inside this specific portfolio, grounded in the numbers.",
+            },
+            bullCase: {
+              type: "array",
+              items: { type: "string" },
+              description: "2-3 concise bull points for the company, each citing a metric.",
+            },
+            bearCase: {
+              type: "array",
+              items: { type: "string" },
+              description: "2-3 concise bear/risk points, each citing a metric.",
+            },
+            riskLevel: {
+              type: "string",
+              enum: ["low", "moderate", "elevated", "high"],
+              description:
+                "Overall risk of this position for THIS portfolio and investor profile.",
+            },
+            fitNotes: {
+              type: "string",
+              description:
+                "1-2 sentences on how this position fits (or conflicts with) the investor's stated risk tolerance, horizon, focus, and sector preferences.",
+            },
+            portfolioImpact: {
+              type: "string",
+              description:
+                "1-2 sentences on what this position does to portfolio concentration: weight of the holding, sector tilt, diversification.",
+            },
+          },
+          required: [
+            "summary",
+            "bullCase",
+            "bearCase",
+            "riskLevel",
+            "fitNotes",
+            "portfolioImpact",
+          ],
+        },
+      },
+    },
+    system: `${SYSTEM_PROMPT}
+You are also given the investor's current portfolio weights and stated preferences.
+Judge the position IN CONTEXT: a fine company can still be a risky position if it
+dominates the portfolio or fights the investor's stated style. Be direct about
+concentration. This is informational only, not personalized investment advice.`,
+    messages: [
+      {
+        role: "user",
+        content: `Company data:\n\n${context}\n\nCurrent portfolio weights (including this position):\n${portfolioBlock}\n\nInvestor profile:\n${profileBlock}\n\nAssess the ${symbol} position.`,
+      },
+    ],
+  });
+
+  const parsed = JSON.parse(extractText(message)) as Omit<
+    PositionAnalysis,
+    "symbol" | "generatedAt" | "model"
+  >;
+
+  return {
+    symbol,
+    ...parsed,
     generatedAt: new Date().toISOString(),
     model: MODEL,
   };

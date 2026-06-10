@@ -7,10 +7,13 @@ import type {
   Financials,
   History,
   HistoryRange,
+  InvestorProfile,
   MarketBriefing,
   Multiples,
   NewsItem,
   Period,
+  PortfolioPosition,
+  PositionAnalysis,
   QualityScores,
   Quote,
   SearchResult,
@@ -122,5 +125,28 @@ export class HttpProvider implements FinancialDataProvider {
 
   getDividends(symbol: Ticker): Promise<DividendInfo> {
     return this.get<DividendInfo>(`/api/dividends/${encodeURIComponent(symbol)}`);
+  }
+
+  async getPositionAnalysis(
+    symbol: Ticker,
+    portfolio: PortfolioPosition[],
+    profile: InvestorProfile | null,
+  ): Promise<PositionAnalysis> {
+    const res = await fetch(`${this.baseUrl}/api/position-analysis`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol, portfolio, profile }),
+    });
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body?.error) message = body.error;
+      } catch {
+        // ignore
+      }
+      throw new ProviderError(`Backend ${res.status}: ${message}`, res.status);
+    }
+    return (await res.json()) as PositionAnalysis;
   }
 }

@@ -23,6 +23,13 @@ export type {
   UpcomingEvents,
   DividendPayment,
   DividendInfo,
+  RiskTolerance,
+  InvestmentHorizon,
+  InvestmentFocus,
+  DiversificationStyle,
+  InvestorProfile,
+  PortfolioPosition,
+  PositionAnalysis,
 } from "./types";
 export { ProviderError, type FinancialDataProvider } from "./provider";
 export { FmpProvider } from "./providers/fmp";

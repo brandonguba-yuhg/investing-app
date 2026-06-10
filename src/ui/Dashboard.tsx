@@ -6,8 +6,12 @@ import {
   positionStats,
   type PortfolioBreakdown,
 } from "../core/portfolio";
-import type { Quote, Ticker } from "../core/types";
+import type { InvestorProfile, PortfolioPosition, Quote, Ticker } from "../core/types";
 import type { WatchlistEntry } from "../core/watchlist";
+import { AllocationWheel } from "./AllocationWheel";
+import { OnboardingQuiz } from "./OnboardingQuiz";
+import { PositionAnalysisCard } from "./PositionAnalysisCard";
+import { useInvestorProfile } from "./useInvestorProfile";
 import { useProvider } from "./providerContext";
 import { useWatchlist } from "./useWatchlist";
 
@@ -24,11 +28,17 @@ interface CardState {
 export function Dashboard({ onSelect }: Props) {
   const provider = useProvider();
   const watchlist = useWatchlist();
+  const { profile, save: saveProfile } = useInvestorProfile();
   const [cards, setCards] = useState<CardState[]>([]);
   const [loading, setLoading] = useState(false);
   const [sectors, setSectors] = useState<Record<string, string>>({});
   // symbol -> forward annual dividend per share (only for payers)
   const [divPerShare, setDivPerShare] = useState<Record<string, number>>({});
+  // First-visit onboarding: hidden for the session via "Maybe later".
+  const [quizDismissed, setQuizDismissed] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  // Symbol currently shown in the AI position-check card.
+  const [analysisSymbol, setAnalysisSymbol] = useState<string | null>(null);
 
   // Symbols that represent a real position (shares + cost). Sector allocation
   // only makes sense for these, so we only fetch profiles for them.
@@ -145,6 +155,29 @@ export function Dashboard({ onSelect }: Props) {
     return { annual, payers };
   }, [watchlist.entries, divPerShare]);
 
+  // Current weights in the wire shape the position-analysis endpoint expects.
+  const portfolioPositions = useMemo<PortfolioPosition[]>(
+    () =>
+      (breakdown?.byHolding ?? []).map((s) => ({
+        symbol: s.key,
+        weightPct: s.pct,
+        sector: sectors[s.key],
+      })),
+    [breakdown, sectors],
+  );
+
+  // Saving a real position (shares + cost) triggers the AI position check.
+  const handleUpdatePosition = (
+    symbol: string,
+    shares: number | undefined,
+    cost: number | undefined,
+  ) => {
+    const prev = watchlist.getEntry(symbol);
+    watchlist.updatePosition(symbol, shares, cost);
+    const changed = prev?.shares !== shares || prev?.costBasis !== cost;
+    if (shares && cost && changed) setAnalysisSymbol(symbol);
+  };
+
   if (watchlist.tickers.length === 0) {
     return (
       <div className="empty">
@@ -156,12 +189,43 @@ export function Dashboard({ onSelect }: Props) {
     );
   }
 
+  const showQuiz = (!profile && !quizDismissed) || editingProfile;
+
   return (
     <div className="dashboard">
+      {showQuiz && (
+        <OnboardingQuiz
+          initial={profile}
+          onSave={(p) => {
+            saveProfile(p);
+            setEditingProfile(false);
+            setQuizDismissed(true);
+          }}
+          onCancel={() => {
+            setEditingProfile(false);
+            setQuizDismissed(true);
+          }}
+        />
+      )}
+
       {totals.positionsCount > 0 && <PortfolioSummary totals={totals} />}
 
+      {analysisSymbol && (
+        <PositionAnalysisCard
+          symbol={analysisSymbol}
+          portfolio={portfolioPositions}
+          profile={profile}
+          onClose={() => setAnalysisSymbol(null)}
+        />
+      )}
+
       {breakdown && breakdown.holdingsCount >= 2 && (
-        <PortfolioInsights breakdown={breakdown} income={income} />
+        <PortfolioInsights
+          breakdown={breakdown}
+          income={income}
+          profile={profile}
+          onEditProfile={() => setEditingProfile(true)}
+        />
       )}
 
       <div className="dashboard-header">
@@ -182,7 +246,12 @@ export function Dashboard({ onSelect }: Props) {
             onOpen={() => onSelect(card.symbol)}
             onRemove={() => watchlist.remove(card.symbol)}
             onUpdatePosition={(shares, cost) =>
-              watchlist.updatePosition(card.symbol, shares, cost)
+              handleUpdatePosition(card.symbol, shares, cost)
+            }
+            onAnalyze={
+              watchlist.getEntry(card.symbol)?.shares
+                ? () => setAnalysisSymbol(card.symbol)
+                : undefined
             }
           />
         ))}
@@ -231,25 +300,41 @@ function PortfolioSummary({
   );
 }
 
+// How much single-stock / single-sector concentration warrants a flag depends
+// on the user's stated weighting style.
+const THRESHOLDS: Record<
+  InvestorProfile["diversification"],
+  { holding: number; sector: number }
+> = {
+  concentrated: { holding: 40, sector: 65 },
+  balanced: { holding: 25, sector: 50 },
+  diversified: { holding: 15, sector: 35 },
+};
+
 function PortfolioInsights({
   breakdown,
   income,
+  profile,
+  onEditProfile,
 }: {
   breakdown: PortfolioBreakdown;
   income: { annual: number; payers: number };
+  profile: InvestorProfile | null;
+  onEditProfile: () => void;
 }) {
   const { bySector, byHolding, topHoldingPct, holdingsCount, sectorsCount } = breakdown;
   const topHolding = byHolding[0];
   const topSector = bySector[0];
+  const limits = THRESHOLDS[profile?.diversification ?? "balanced"];
 
   // Gentle, informational concentration flags — not advice.
   const flags: string[] = [];
-  if (topHolding && topHoldingPct >= 25) {
+  if (topHolding && topHoldingPct >= limits.holding) {
     flags.push(
-      `${topHolding.key} is ${topHoldingPct.toFixed(0)}% of your portfolio — a large single-stock position.`,
+      `${topHolding.key} is ${topHoldingPct.toFixed(0)}% of your portfolio — large${profile ? " for your stated weighting style" : ""} for a single stock.`,
     );
   }
-  if (topSector && topSector.pct >= 50 && sectorsCount > 1) {
+  if (topSector && topSector.pct >= limits.sector && sectorsCount > 1) {
     flags.push(
       `${topSector.key} makes up ${topSector.pct.toFixed(0)}% of your holdings — heavily weighted to one sector.`,
     );
@@ -268,7 +353,16 @@ function PortfolioInsights({
           {holdingsCount} holding{holdingsCount === 1 ? "" : "s"} · {sectorsCount} sector
           {sectorsCount === 1 ? "" : "s"}
         </span>
+        <button className="pi-profile-btn" onClick={onEditProfile}>
+          {profile ? "Edit profile" : "Set up profile"}
+        </button>
       </div>
+
+      <AllocationWheel
+        slices={byHolding}
+        centerLabel={`${holdingsCount}`}
+        centerSub={`holding${holdingsCount === 1 ? "" : "s"}`}
+      />
 
       <div className="pi-bars">
         {bySector.map((s) => (
@@ -315,6 +409,7 @@ function DashboardCard({
   onOpen,
   onRemove,
   onUpdatePosition,
+  onAnalyze,
 }: {
   card: CardState;
   entry?: WatchlistEntry;
@@ -322,6 +417,7 @@ function DashboardCard({
   onOpen: () => void;
   onRemove: () => void;
   onUpdatePosition: (shares: number | undefined, cost: number | undefined) => void;
+  onAnalyze?: () => void;
 }) {
   const { symbol, quote, error } = card;
   const positive = quote ? quote.change >= 0 : false;
@@ -335,6 +431,11 @@ function DashboardCard({
           {symbol}
         </button>
         <div className="card-actions">
+          {onAnalyze && (
+            <button className="card-analyze" onClick={onAnalyze} title="AI position check">
+              ✦
+            </button>
+          )}
           <button
             className="card-edit"
             onClick={() => setEditing((v) => !v)}

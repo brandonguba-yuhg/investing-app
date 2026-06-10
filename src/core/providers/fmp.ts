@@ -10,10 +10,13 @@ import type {
   History,
   HistoryRange,
   IncomeStatement,
+  InvestorProfile,
   MarketBriefing,
   Multiples,
   NewsItem,
   Period,
+  PortfolioPosition,
+  PositionAnalysis,
   QualityScores,
   Quote,
   SearchResult,
@@ -180,6 +183,14 @@ export class FmpProvider implements FinancialDataProvider {
 
   async getUpcomingEvents(_watchlist?: Ticker[]): Promise<UpcomingEvents> {
     throw new ProviderError("Upcoming events require the backend provider.", 501);
+  }
+
+  async getPositionAnalysis(
+    _symbol: Ticker,
+    _portfolio: PortfolioPosition[],
+    _profile: InvestorProfile | null,
+  ): Promise<PositionAnalysis> {
+    throw new ProviderError("Position analysis requires the backend provider.", 501);
   }
 
   async getDividends(_symbol: Ticker): Promise<DividendInfo> {
