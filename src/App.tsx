@@ -60,7 +60,7 @@ function App() {
     <ProviderContext.Provider value={provider}>
       <div className="app">
         <header className="app-header">
-          <h1 className="logo">Investing</h1>
+          <h1 className="logo">Voyance</h1>
           <nav className="page-nav">
             <button
               className={page === "home" ? "page-link on" : "page-link"}
@@ -69,16 +69,16 @@ function App() {
               Home
             </button>
             <button
-              className={page === "lookup" ? "page-link on" : "page-link"}
-              onClick={() => setPage("lookup")}
-            >
-              Lookup
-            </button>
-            <button
               className={page === "dashboard" ? "page-link on" : "page-link"}
               onClick={() => setPage("dashboard")}
             >
               Dashboard
+            </button>
+            <button
+              className={page === "lookup" ? "page-link on" : "page-link"}
+              onClick={() => setPage("lookup")}
+            >
+              Lookup
             </button>
             <button
               className={page === "compare" ? "page-link on" : "page-link"}
