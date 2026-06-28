@@ -1,4 +1,4 @@
-// Data orchestration across three sources, tried in order:
+// Data orchestration across four sources, tried in order:
 //
 //   1. Yahoo — free, broadest data (fundamentals, news, history). Works locally
 //      but its endpoints block Railway's datacenter IP, so in production it
@@ -8,12 +8,16 @@
 //      history/news.
 //   3. Twelve Data — official keyed API, works from datacenters, covers all US
 //      symbols for quote/profile/search/history. No fundamentals on free tier.
+//   4. SEC EDGAR — free/keyless, covers every US filer's 10-K/10-Q fundamentals
+//      (financials, scores, derived multiples). The backstop for symbols FMP's
+//      free tier gates (MU, mid-caps). No prices/quotes/news.
 //
 // Per-capability chains below pick the sources that can actually serve them.
 // Scores are special-cased: Yahoo returns {unavailable:true} instead of
 // throwing, so the chain checks the result rather than catching.
 
 import * as fmp from "./fmp.js";
+import * as sec from "./sec.js";
 import * as td from "./twelvedata.js";
 import type {
   CompanyProfile,
@@ -89,14 +93,26 @@ export function getFinancials(symbol: Ticker, period: Period, limit = 5): Promis
   return chain("financials", [
     { name: "Yahoo", enabled: always, load: () => yahoo.getFinancials(symbol, period, limit) },
     { name: "FMP", enabled: fmp.fmpEnabled, load: () => fmp.getFinancials(symbol, period, limit) },
+    { name: "SEC", enabled: sec.secEnabled, load: () => sec.getFinancials(symbol, period, limit) },
   ]);
 }
 
-export function getMultiples(symbol: Ticker): Promise<Multiples> {
-  return chain("multiples", [
-    { name: "Yahoo", enabled: always, load: () => yahoo.getMultiples(symbol) },
-    { name: "FMP", enabled: fmp.fmpEnabled, load: () => fmp.getMultiples(symbol) },
-  ]);
+export async function getMultiples(symbol: Ticker): Promise<Multiples> {
+  try {
+    return await chain("multiples", [
+      { name: "Yahoo", enabled: always, load: () => yahoo.getMultiples(symbol) },
+      { name: "FMP", enabled: fmp.fmpEnabled, load: () => fmp.getMultiples(symbol) },
+    ]);
+  } catch (e) {
+    // SEC can derive multiples from the 10-K, but only with a live price (it has
+    // none of its own). Pull the price from the quote chain first.
+    if (!sec.secEnabled()) throw e;
+    const price = await getQuote(symbol)
+      .then((q) => q.price)
+      .catch(() => undefined);
+    console.warn(`[data] multiples: served from SEC fallback`);
+    return sec.getMultiples(symbol, price);
+  }
 }
 
 export function getHistory(symbol: Ticker, range: HistoryRange): Promise<History> {
@@ -122,6 +138,22 @@ export async function getScores(symbol: Ticker): Promise<QualityScores> {
       if (!fromFmp.unavailable) {
         console.warn(`[data] scores: served from FMP fallback`);
         return fromFmp;
+      }
+    } catch {
+      // fall through to SEC
+    }
+  }
+  if (sec.secEnabled()) {
+    try {
+      // SEC has no price of its own; supply one so Altman's market-equity term
+      // is populated (otherwise asset-heavy firms look falsely distressed).
+      const price = await getQuote(symbol)
+        .then((q) => q.price)
+        .catch(() => undefined);
+      const fromSec = await sec.getScores(symbol, price);
+      if (!fromSec.unavailable) {
+        console.warn(`[data] scores: served from SEC fallback`);
+        return fromSec;
       }
     } catch {
       // fall through to unavailable
