@@ -121,15 +121,6 @@ function daysBetween(a: string, b: string): number {
   return Math.abs(new Date(b).getTime() - new Date(a).getTime()) / DAY;
 }
 
-/** First non-empty unit array among the given us-gaap concept aliases. */
-function gaap(facts: CompanyFacts, names: readonly string[], unit = "USD"): FactEntry[] {
-  for (const name of names) {
-    const u = facts.facts?.["us-gaap"]?.[name]?.units?.[unit];
-    if (Array.isArray(u) && u.length) return u;
-  }
-  return [];
-}
-
 function dei(facts: CompanyFacts, names: readonly string[], unit = "shares"): FactEntry[] {
   for (const name of names) {
     const u = facts.facts?.dei?.[name]?.units?.[unit];
@@ -244,13 +235,45 @@ function endsDesc(map: Map<string, number>): string[] {
   return [...map.keys()].sort((a, b) => b.localeCompare(a));
 }
 
+/**
+ * Extract a metric across all of its concept aliases and merge per fiscal-period
+ * end date, with EARLIER aliases winning. Picking one concept wholesale breaks
+ * when a company switches XBRL tags over time (RH moved from
+ * RevenueFromContract…Excluding to …Including; REITs report under Revenues), so
+ * a stale-but-non-empty first alias would otherwise shadow the current one.
+ */
+function merge(
+  facts: CompanyFacts,
+  names: readonly string[],
+  unit: string,
+  extract: (entries: FactEntry[]) => Map<string, number>,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const name of names) {
+    const u = facts.facts?.["us-gaap"]?.[name]?.units?.[unit];
+    if (!Array.isArray(u) || !u.length) continue;
+    for (const [end, val] of extract(u)) if (!out.has(end)) out.set(end, val);
+  }
+  return out;
+}
+
+const aFlows = (f: CompanyFacts, n: readonly string[], u = "USD") => merge(f, n, u, annualFlows);
+const aInst = (f: CompanyFacts, n: readonly string[]) => merge(f, n, "USD", annualInstants);
+const qFlows = (f: CompanyFacts, n: readonly string[], u = "USD") => merge(f, n, u, quarterFlows);
+const qInst = (f: CompanyFacts, n: readonly string[]) => merge(f, n, "USD", quarterInstants);
+const qYtd = (f: CompanyFacts, n: readonly string[], u = "USD") => merge(f, n, u, quarterFromYtd);
+
 // us-gaap concept aliases (companies tag the same line under different names).
 const C = {
   revenue: [
     "RevenueFromContractWithCustomerExcludingAssessedTax",
     "Revenues",
-    "RevenueFromContractWithCustomerIncludingAssessedTax",
     "SalesRevenueNet",
+    // tax-inclusive only as a fallback (slightly overstates by sales tax)
+    "RevenueFromContractWithCustomerIncludingAssessedTax",
+    // REIT lease income, for filers that report no contract/Revenues total
+    "LeaseIncome",
+    "RealEstateRevenueNet",
   ],
   cost: ["CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold"],
   gross: ["GrossProfit"],
@@ -329,26 +352,26 @@ function epsAt(end: string, netIncome: number, eps: Map<string, number>, sharesC
 // ---------- financials ----------
 
 function annualFinancials(facts: CompanyFacts, limit: number): Financials {
-  const revenue = annualFlows(gaap(facts, C.revenue));
-  const cost = annualFlows(gaap(facts, C.cost));
-  const gross = annualFlows(gaap(facts, C.gross));
-  const operatingIncome = annualFlows(gaap(facts, C.operatingIncome));
-  const netIncome = annualFlows(gaap(facts, C.netIncome));
-  const eps = annualFlows(gaap(facts, C.eps, "USD/shares"));
-  const shares = annualFlows(gaap(facts, C.sharesDiluted, "shares"));
-  const sharesBasic = annualFlows(gaap(facts, C.sharesBasic, "shares"));
+  const revenue = aFlows(facts, C.revenue);
+  const cost = aFlows(facts, C.cost);
+  const gross = aFlows(facts, C.gross);
+  const operatingIncome = aFlows(facts, C.operatingIncome);
+  const netIncome = aFlows(facts, C.netIncome);
+  const eps = aFlows(facts, C.eps, "USD/shares");
+  const shares = aFlows(facts, C.sharesDiluted, "shares");
+  const sharesBasic = aFlows(facts, C.sharesBasic, "shares");
 
-  const assets = annualInstants(gaap(facts, C.assets));
-  const liabilities = annualInstants(gaap(facts, C.liabilities));
-  const equity = annualInstants(gaap(facts, C.equity));
-  const cash = annualInstants(gaap(facts, C.cash));
-  const longTermDebt = annualInstants(gaap(facts, C.longTermDebt));
-  const shortTermDebt = annualInstants(gaap(facts, C.shortTermDebt));
+  const assets = aInst(facts, C.assets);
+  const liabilities = aInst(facts, C.liabilities);
+  const equity = aInst(facts, C.equity);
+  const cash = aInst(facts, C.cash);
+  const longTermDebt = aInst(facts, C.longTermDebt);
+  const shortTermDebt = aInst(facts, C.shortTermDebt);
 
-  const ocf = annualFlows(gaap(facts, C.ocf));
-  const icf = annualFlows(gaap(facts, C.icf));
-  const fcfFinancing = annualFlows(gaap(facts, C.fcf));
-  const capex = annualFlows(gaap(facts, C.capex));
+  const ocf = aFlows(facts, C.ocf);
+  const icf = aFlows(facts, C.icf);
+  const fcfFinancing = aFlows(facts, C.fcf);
+  const capex = aFlows(facts, C.capex);
 
   const dilutedShares = (end: string): number => shares.get(end) ?? sharesBasic.get(end) ?? 0;
 
@@ -403,34 +426,28 @@ function annualFinancials(facts: CompanyFacts, limit: number): Financials {
 }
 
 function quarterlyFinancials(facts: CompanyFacts, limit: number): Financials {
-  const revenue = withDerivedQ4(quarterFlows(gaap(facts, C.revenue)), annualFlows(gaap(facts, C.revenue)));
-  const cost = withDerivedQ4(quarterFlows(gaap(facts, C.cost)), annualFlows(gaap(facts, C.cost)));
-  const gross = withDerivedQ4(quarterFlows(gaap(facts, C.gross)), annualFlows(gaap(facts, C.gross)));
-  const operatingIncome = withDerivedQ4(
-    quarterFlows(gaap(facts, C.operatingIncome)),
-    annualFlows(gaap(facts, C.operatingIncome)),
-  );
-  const netIncome = withDerivedQ4(quarterFlows(gaap(facts, C.netIncome)), annualFlows(gaap(facts, C.netIncome)));
-  const eps = withDerivedQ4(
-    quarterFlows(gaap(facts, C.eps, "USD/shares")),
-    annualFlows(gaap(facts, C.eps, "USD/shares")),
-  );
+  const revenue = withDerivedQ4(qFlows(facts, C.revenue), aFlows(facts, C.revenue));
+  const cost = withDerivedQ4(qFlows(facts, C.cost), aFlows(facts, C.cost));
+  const gross = withDerivedQ4(qFlows(facts, C.gross), aFlows(facts, C.gross));
+  const operatingIncome = withDerivedQ4(qFlows(facts, C.operatingIncome), aFlows(facts, C.operatingIncome));
+  const netIncome = withDerivedQ4(qFlows(facts, C.netIncome), aFlows(facts, C.netIncome));
+  const eps = withDerivedQ4(qFlows(facts, C.eps, "USD/shares"), aFlows(facts, C.eps, "USD/shares"));
   // Share counts aren't additive, so no Q4 derivation — used only for EPS fallback.
-  const shares = quarterFlows(gaap(facts, C.sharesDiluted, "shares"));
-  const sharesBasic = quarterFlows(gaap(facts, C.sharesBasic, "shares"));
+  const shares = qFlows(facts, C.sharesDiluted, "shares");
+  const sharesBasic = qFlows(facts, C.sharesBasic, "shares");
 
-  const assets = quarterInstants(gaap(facts, C.assets));
-  const liabilities = quarterInstants(gaap(facts, C.liabilities));
-  const equity = quarterInstants(gaap(facts, C.equity));
-  const cash = quarterInstants(gaap(facts, C.cash));
-  const longTermDebt = quarterInstants(gaap(facts, C.longTermDebt));
-  const shortTermDebt = quarterInstants(gaap(facts, C.shortTermDebt));
+  const assets = qInst(facts, C.assets);
+  const liabilities = qInst(facts, C.liabilities);
+  const equity = qInst(facts, C.equity);
+  const cash = qInst(facts, C.cash);
+  const longTermDebt = qInst(facts, C.longTermDebt);
+  const shortTermDebt = qInst(facts, C.shortTermDebt);
 
   // Cash flows are YTD in 10-Qs → difference to discrete quarters.
-  const ocf = quarterFromYtd(gaap(facts, C.ocf));
-  const icf = quarterFromYtd(gaap(facts, C.icf));
-  const fcfFinancing = quarterFromYtd(gaap(facts, C.fcf));
-  const capex = quarterFromYtd(gaap(facts, C.capex));
+  const ocf = qYtd(facts, C.ocf);
+  const icf = qYtd(facts, C.icf);
+  const fcfFinancing = qYtd(facts, C.fcf);
+  const capex = qYtd(facts, C.capex);
 
   const income: IncomeStatement[] = endsDesc(netIncome)
     .slice(0, limit)
@@ -500,7 +517,7 @@ function latestSharesOutstanding(facts: CompanyFacts): number | undefined {
   const fromDei = [...keepLatest(dei(facts, ["EntityCommonStockSharesOutstanding"]), (e) => e.end).entries()]
     .sort((a, b) => b[0].localeCompare(a[0]))[0]?.[1];
   if (fromDei) return fromDei;
-  const diluted = annualFlows(gaap(facts, C.sharesDiluted, "shares"));
+  const diluted = aFlows(facts, C.sharesDiluted, "shares");
   const latest = endsDesc(diluted)[0];
   return latest ? diluted.get(latest) : undefined;
 }
@@ -508,21 +525,21 @@ function latestSharesOutstanding(facts: CompanyFacts): number | undefined {
 export async function getScores(symbol: Ticker, price?: number): Promise<QualityScores> {
   const facts = await getFacts(symbol);
 
-  const netIncome = annualFlows(gaap(facts, C.netIncome));
-  const revenue = annualFlows(gaap(facts, C.revenue));
-  const gross = annualFlows(gaap(facts, C.gross));
-  const operatingIncome = annualFlows(gaap(facts, C.operatingIncome));
-  const ocf = annualFlows(gaap(facts, C.ocf));
-  const shares = annualFlows(gaap(facts, C.sharesDiluted, "shares"));
-  const sharesBasic = annualFlows(gaap(facts, C.sharesBasic, "shares"));
+  const netIncome = aFlows(facts, C.netIncome);
+  const revenue = aFlows(facts, C.revenue);
+  const gross = aFlows(facts, C.gross);
+  const operatingIncome = aFlows(facts, C.operatingIncome);
+  const ocf = aFlows(facts, C.ocf);
+  const shares = aFlows(facts, C.sharesDiluted, "shares");
+  const sharesBasic = aFlows(facts, C.sharesBasic, "shares");
 
-  const assets = annualInstants(gaap(facts, C.assets));
-  const liabilities = annualInstants(gaap(facts, C.liabilities));
-  const equity = annualInstants(gaap(facts, C.equity));
-  const currentAssets = annualInstants(gaap(facts, C.currentAssets));
-  const currentLiabilities = annualInstants(gaap(facts, C.currentLiabilities));
-  const retainedEarnings = annualInstants(gaap(facts, C.retainedEarnings));
-  const longTermDebt = annualInstants(gaap(facts, C.longTermDebt));
+  const assets = aInst(facts, C.assets);
+  const liabilities = aInst(facts, C.liabilities);
+  const equity = aInst(facts, C.equity);
+  const currentAssets = aInst(facts, C.currentAssets);
+  const currentLiabilities = aInst(facts, C.currentLiabilities);
+  const retainedEarnings = aInst(facts, C.retainedEarnings);
+  const longTermDebt = aInst(facts, C.longTermDebt);
 
   // Need two consecutive fiscal years (current + prior) for Piotroski trends.
   const years = endsDesc(netIncome).filter((e) => assets.has(e));
@@ -563,22 +580,21 @@ export async function getScores(symbol: Ticker, price?: number): Promise<Quality
 export async function getMultiples(symbol: Ticker, price?: number): Promise<Multiples> {
   const facts = await getFacts(symbol);
 
-  const revenue = annualFlows(gaap(facts, C.revenue));
-  const gross = annualFlows(gaap(facts, C.gross));
-  const cost = annualFlows(gaap(facts, C.cost));
-  const operatingIncome = annualFlows(gaap(facts, C.operatingIncome));
-  const netIncome = annualFlows(gaap(facts, C.netIncome));
-  const ocf = annualFlows(gaap(facts, C.ocf));
-  const capex = annualFlows(gaap(facts, C.capex));
-  const depAmort = annualFlows(gaap(facts, C.depAmort));
-  const interestExpense = annualFlows(gaap(facts, C.interestExpense));
+  const revenue = aFlows(facts, C.revenue);
+  const gross = aFlows(facts, C.gross);
+  const cost = aFlows(facts, C.cost);
+  const operatingIncome = aFlows(facts, C.operatingIncome);
+  const netIncome = aFlows(facts, C.netIncome);
+  const ocf = aFlows(facts, C.ocf);
+  const capex = aFlows(facts, C.capex);
+  const depAmort = aFlows(facts, C.depAmort);
+  const interestExpense = aFlows(facts, C.interestExpense);
 
-  const assets = annualInstants(gaap(facts, C.assets));
-  const liabilities = annualInstants(gaap(facts, C.liabilities));
-  const equity = annualInstants(gaap(facts, C.equity));
-  const cash = annualInstants(gaap(facts, C.cash));
-  const longTermDebt = annualInstants(gaap(facts, C.longTermDebt));
-  const shortTermDebt = annualInstants(gaap(facts, C.shortTermDebt));
+  const assets = aInst(facts, C.assets);
+  const equity = aInst(facts, C.equity);
+  const cash = aInst(facts, C.cash);
+  const longTermDebt = aInst(facts, C.longTermDebt);
+  const shortTermDebt = aInst(facts, C.shortTermDebt);
 
   const fy = endsDesc(netIncome).find((e) => assets.has(e));
   if (!fy) throw new Error("SEC: insufficient data for multiples");
