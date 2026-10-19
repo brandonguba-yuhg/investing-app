@@ -147,11 +147,11 @@ function askRateLimited(ip: string): boolean {
 }
 
 app.get("/api/briefing", (_req, res) => {
-  if (!ai.aiEnabled()) {
+  if (!briefingStore.enabled()) {
     return res.status(503).json({ error: "AI briefing is not configured." });
   }
-  // The briefing store keeps a warm copy (regenerated on boot + every 6h), so we
-  // never block a request on the multi-minute web-search run. Serve whatever we
+  // The briefing store keeps a warm copy (generated on boot and once per new
+  // session), so we never block a request on generation. Serve whatever we
   // have immediately; if it's stale (a previous day's), trigger a background
   // refresh so the next load is current.
   const cached = briefingStore.getCurrent();

@@ -162,8 +162,40 @@ export interface BriefingItem {
   summary: string;
 }
 
+/**
+ * A single quoted market level. Every one must carry its own citation — the
+ * freshness gate rejects the whole brief if a level has no source_url.
+ */
+export interface BriefingLevel {
+  value: number;
+  change_pct: number | null;
+  source_url: string;
+}
+
+/**
+ * The structured, gate-validated payload the model produced. Kept alongside
+ * the client-facing fields (headline/overview/items) so future UI can render
+ * the levels table, source-per-driver, etc. Absent on legacy briefs loaded
+ * from disk before the freshness gate was wired in.
+ */
+export interface BriefingPayload {
+  session_date: string;         // YYYY-MM-DD, the trading session described
+  latest_source_date: string;   // YYYY-MM-DD, newest date seen in any source
+  headline: string;
+  summary: string;
+  levels: {
+    spx: BriefingLevel;
+    ndx: BriefingLevel;
+    dji: BriefingLevel;
+    vix?: BriefingLevel;
+    ust10y?: BriefingLevel;
+  };
+  drivers: Array<{ title: string; detail: string; source_url: string }>;
+  ahead: Array<{ when: string; event: string; why: string }>;
+}
+
 export interface MarketBriefing {
-  /** ISO date the briefing covers. */
+  /** ISO date the briefing covers (matches payload.session_date when payload is set). */
   date: string;
   headline: string;
   overview: string;
@@ -177,6 +209,8 @@ export interface MarketBriefing {
    * a "preparing" state and retry shortly.
    */
   preparing?: boolean;
+  /** Structured gate-validated payload; absent on legacy disk-loaded briefs. */
+  payload?: BriefingPayload;
 }
 
 export type EventCategory = "macro" | "earnings";

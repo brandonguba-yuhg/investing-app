@@ -1,9 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { expectedSessionDate } from "./briefing/calendar.js";
+import type { GenerationResult } from "./briefing/types.js";
 import type {
   AIAnalysis,
   AIAnswer,
   InvestorProfile,
-  MarketBriefing,
   PortfolioPosition,
   PositionAnalysis,
   Ticker,
@@ -22,7 +23,9 @@ const MODEL = "claude-opus-4-7";
 
 // The daily briefing is a high-frequency web-search summary, not deep analysis,
 // so it runs on Sonnet to cut cost. Bump to MODEL if quality slips.
-const BRIEFING_MODEL = "claude-sonnet-4-6";
+// BRIEFING_MODEL env var overrides this for the failure-path test (point at a
+// model that won't invoke web_search to force a SEARCH_NOT_EXECUTED rejection).
+const BRIEFING_MODEL = process.env.BRIEFING_MODEL ?? "claude-sonnet-4-6";
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic {
@@ -309,62 +312,100 @@ function extractText(message: Anthropic.Message): string {
   return parts.join("").trim();
 }
 
-// ---------- daily market briefing (web search) ----------
+// ---------- daily market briefing (web search + freshness gate) ----------
 
-const BRIEFING_SYSTEM = `You are the markets editor for a stock-research app, writing today's macro briefing.
-Use web search to find the most important market-moving developments from the last 24 hours:
-the Fed and interest rates, inflation data, major geopolitical events (wars, elections, trade),
-big equity/sector/commodity/currency moves, and notable economic data.
-
-Then respond with ONLY a JSON object (no prose before/after, no markdown code fences) of this shape:
-{
-  "headline": "one punchy line capturing the day's single biggest market story",
-  "overview": "2-3 sentence summary of the overall market mood and what's driving it",
-  "items": [
-    { "heading": "short topic label, e.g. 'Fed & Rates'", "summary": "2-3 factual sentences" }
-  ]
+/**
+ * The system prompt is deliberately strict — every rule maps to a gate in
+ * server/src/briefing/freshness.ts. If you loosen it, you'll surface more
+ * gate rejections (which is fine and safe), not fewer.
+ *
+ * Rule → gate correspondence:
+ *   1 (search first)         → SEARCH_NOT_EXECUTED / NO_RETRIEVED_SOURCES
+ *   2 (URL verbatim)         → FABRICATED_CITATION
+ *   3 (per-level source_url) → UNCITED_LEVEL
+ *   4 (prose ⊆ declared)     → UNBACKED_PROSE_NUMBER
+ *   5 (session_date pinned)  → SESSION_MISMATCH
+ *   6 (latest_source_date)   → SOURCE_DATE_STALE
+ */
+function buildBriefingSystemPrompt(expectedSession: string): string {
+  return [
+    "You are the markets editor for Voyance, an equity-research app. You write the daily briefing.",
+    "",
+    `The session you MUST describe is the US trading session dated ${expectedSession}.`,
+    "Do not describe any other session. If you cannot confirm that session's closing data",
+    "from search results, return session_date as the most recent date you can actually confirm —",
+    "do not substitute a nearby day and do not estimate.",
+    "",
+    "Rules, all non-negotiable:",
+    "1. Every number you report must come from a search result you retrieved in this",
+    "   conversation. Never supply a figure from memory, even if you are confident.",
+    "2. Every source_url must be a URL that appeared in your search results verbatim.",
+    "   Never construct, guess, or complete a URL.",
+    "3. Every entry in `levels` and every entry in `drivers` must include its own source_url.",
+    "4. Any index level, price, or percentage that appears in prose (headline, summary,",
+    "   driver.detail) must ALSO appear in the structured `levels` block with the same",
+    "   value. Do not put figures in prose that aren't declared in levels.",
+    "5. `session_date` is the trading session you describe, in YYYY-MM-DD.",
+    "6. `latest_source_date` is the most recent publication date you saw in any source,",
+    "   in YYYY-MM-DD. It must be >= session_date.",
+    "7. Cite at least two distinct source domains across the whole brief.",
+    "",
+    "Return ONLY a JSON object. No preamble, no markdown fences, no trailing commentary.",
+    "Schema (all fields required unless marked optional):",
+    "{",
+    '  "session_date": "YYYY-MM-DD",',
+    '  "latest_source_date": "YYYY-MM-DD",',
+    '  "headline": "one line, no figures",',
+    '  "summary": "2-5 sentences on what happened and why",',
+    '  "levels": {',
+    '    "spx": { "value": number, "change_pct": number, "source_url": "..." },',
+    '    "ndx": { "value": number, "change_pct": number, "source_url": "..." },',
+    '    "dji": { "value": number, "change_pct": number, "source_url": "..." },',
+    '    "vix":    { ... optional },',
+    '    "ust10y": { ... optional }',
+    "  },",
+    '  "drivers": [{ "title": "...", "detail": "...", "source_url": "..." }],',
+    '  "ahead":   [{ "when": "...", "event": "...", "why": "..." }]',
+    "}",
+    "Keep drivers to the 2-4 that actually moved things. Cover Fed/rates, inflation,",
+    "major geopolitical events, and big sector/commodity moves as they matter for the day.",
+    "Keep research efficient: 3-6 broad searches are usually enough. Once you have the",
+    "close, the moves, and the drivers you need, stop searching and write the JSON.",
+  ].join("\n");
 }
-Include 4-6 items covering distinct themes. Be specific and factual — cite figures, levels,
-and named events from your search. No hype, no investment advice, no AI disclaimers.
 
-Keep research efficient: run at most ~5 broad web searches (e.g. "stock market today",
-"Fed interest rates news", "oil prices geopolitics") rather than one narrow search per
-sub-topic. Once you have enough to cover the themes, stop searching and write the JSON.`;
-
-// A hard max_uses cap fights this prompt's multi-theme coverage: the model wants
-// more searches, hits the cap, then loops on pause_turn until the guard runs out
-// (observed 480s+ runs and truncated JSON). Instead we keep the tool uncapped and
-// nudge toward fewer searches via the system prompt below.
+// web_search_20260209 remains the working tool version. Left uncapped: with a
+// hard max_uses the model hits the cap, loops on pause_turn, and truncates its
+// JSON output (observed 480s+ runs). The system prompt nudges toward fewer.
 const BRIEFING_TOOLS = [
   { type: "web_search_20260209", name: "web_search" } as never,
 ];
 
-export async function getMarketBriefing(): Promise<MarketBriefing> {
-  const today = new Date().toISOString().slice(0, 10);
+/**
+ * Generate a raw briefing payload. Returns the model's parsed output plus the
+ * retrieval metadata the freshness gate needs (searchCount, searchUrls, model).
+ *
+ * This function does NOT validate the payload. The caller (briefing-store)
+ * runs assertFreshness() on the result and decides whether to persist.
+ */
+export async function getMarketBriefing(): Promise<GenerationResult> {
+  const expectedSession = expectedSessionDate();
+  const system = buildBriefingSystemPrompt(expectedSession);
+  const userContent = `Search for and report the ${expectedSession} US market close (S&P 500, Nasdaq 100, Dow). Then write the JSON per the schema.`;
 
   let message = await getClient().messages.create({
     model: BRIEFING_MODEL,
     max_tokens: 4000,
     thinking: { type: "adaptive" },
     output_config: { effort: "medium" },
-    system: BRIEFING_SYSTEM,
+    system,
     tools: BRIEFING_TOOLS,
-    messages: [
-      {
-        role: "user",
-        content: `Write today's market briefing for ${today}. Search for the latest macro and market news first.`,
-      },
-    ],
+    messages: [{ role: "user", content: userContent }],
   });
 
   // Server-side tool loop may pause; resume up to a few times.
+  const history: Anthropic.MessageParam[] = [{ role: "user", content: userContent }];
   let guard = 0;
-  const history: Anthropic.MessageParam[] = [
-    {
-      role: "user",
-      content: `Write today's market briefing for ${today}. Search for the latest macro and market news first.`,
-    },
-  ];
   while (message.stop_reason === "pause_turn" && guard < 3) {
     guard += 1;
     history.push({ role: "assistant", content: message.content });
@@ -373,40 +414,49 @@ export async function getMarketBriefing(): Promise<MarketBriefing> {
       max_tokens: 4000,
       thinking: { type: "adaptive" },
       output_config: { effort: "medium" },
-      system: BRIEFING_SYSTEM,
+      system,
       tools: BRIEFING_TOOLS,
       messages: history,
     });
   }
 
-  const parsed = parseJsonLoose(extractText(message)) as {
-    headline?: string;
-    overview?: string;
-    items?: Array<{ heading?: string; summary?: string }>;
-  };
-
-  const items = (parsed.items ?? [])
-    .filter((i) => i.heading && i.summary)
-    .map((i) => ({
-      heading: stripCitations(String(i.heading)),
-      summary: stripCitations(String(i.summary)),
-    }));
+  const { urls, count } = extractRetrieval(message.content);
+  const payload = parseJsonLoose(extractText(message));
 
   return {
-    date: today,
-    headline: stripCitations(parsed.headline ?? "Today's market briefing"),
-    overview: stripCitations(parsed.overview ?? ""),
-    items,
-    sources: extractSources(message),
-    generatedAt: new Date().toISOString(),
-    model: BRIEFING_MODEL,
+    payload,
+    searchUrls: urls,
+    searchCount: count,
+    model: message.model ?? BRIEFING_MODEL,
   };
 }
 
-// Web search wraps cited claims in <cite index="..">..</cite> markup. Strip the
-// tags (keeping the text) so they don't render literally in the UI; real source
-// links are surfaced separately via extractSources().
-function stripCitations(text: string): string {
+/** Pull the URLs the web_search tool actually returned, plus how many searches ran. */
+function extractRetrieval(content: unknown[]): { urls: string[]; count: number } {
+  const urls: string[] = [];
+  let count = 0;
+  for (const raw of content ?? []) {
+    const block = raw as Record<string, unknown>;
+    if (block?.type === "server_tool_use" && block?.name === "web_search") count++;
+    if (block?.type === "web_search_tool_result") {
+      const items = Array.isArray(block.content) ? (block.content as Record<string, unknown>[]) : [];
+      for (const item of items) {
+        if (item?.type === "web_search_result" && typeof item.url === "string") {
+          urls.push(item.url);
+        }
+      }
+    }
+  }
+  return { urls: [...new Set(urls)], count };
+}
+
+/**
+ * Web search wraps cited claims in <cite index="..">..</cite> markup. Strip the
+ * tags (keeping the text) so they don't render literally in the UI. Exported so
+ * the briefing store can apply it when building the client-facing MarketBriefing
+ * from the accepted payload.
+ */
+export function stripCitations(text: string): string {
   return text
     .replace(/<\/?cite[^>]*>/gi, "")
     .replace(/[ \t]{2,}/g, " ")
@@ -422,27 +472,4 @@ function parseJsonLoose(text: string): unknown {
   const end = t.lastIndexOf("}");
   if (start >= 0 && end > start) t = t.slice(start, end + 1);
   return JSON.parse(t);
-}
-
-/** Best-effort pull of source links from web_search_tool_result blocks. */
-function extractSources(
-  message: Anthropic.Message,
-): { title: string; url: string }[] | undefined {
-  const out: { title: string; url: string }[] = [];
-  const seen = new Set<string>();
-  const blocks = message.content as unknown as Array<Record<string, unknown>>;
-  for (const block of blocks) {
-    if (block.type !== "web_search_tool_result") continue;
-    const content = block.content as Array<Record<string, unknown>> | undefined;
-    if (!Array.isArray(content)) continue;
-    for (const r of content) {
-      const url = r.url as string | undefined;
-      const title = (r.title as string | undefined) ?? url;
-      if (url && title && !seen.has(url)) {
-        seen.add(url);
-        out.push({ title, url });
-      }
-    }
-  }
-  return out.length ? out.slice(0, 8) : undefined;
 }
