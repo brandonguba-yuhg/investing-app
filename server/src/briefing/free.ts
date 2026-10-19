@@ -22,19 +22,21 @@ import type { BriefingPayload, GenerationResult, Level } from "./types.js";
 const FETCH_TIMEOUT_MS = 15_000;
 const UA = "Mozilla/5.0 (compatible; VoyanceBriefing/1.0)";
 
-// "gemini-flash-latest" tracks Google's current free-tier Flash model, so this
-// doesn't break when a pinned version is retired. Override with GEMINI_MODEL.
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+// The "-latest" aliases track Google's current free-tier models, so this doesn't
+// break when a pinned version is retired. Tried in order: free-tier Flash is often
+// overloaded (503 "high demand"), so Flash-Lite backs it up before the template.
+// Override with GEMINI_MODEL (comma-separated for a custom fallback order).
+const GEMINI_MODELS = (process.env.GEMINI_MODEL || "gemini-flash-latest,gemini-flash-lite-latest")
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
+const GEMINI_TIMEOUT_MS = 45_000;
 
 /** Thrown when the session's closes aren't published yet. Not a gate failure — just early. */
 export class LevelsNotReadyError extends Error {}
 
 function geminiKey(): string {
   return (process.env.GEMINI_API_KEY ?? "").trim().replace(/^["']|["']$/g, "");
-}
-
-export function writerName(): string {
-  return geminiKey() ? GEMINI_MODEL : "template";
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -316,6 +318,7 @@ function templateWrite(levels: BriefingPayload["levels"], articles: Article[], s
 }
 
 async function geminiWrite(
+  model: string,
   levels: BriefingPayload["levels"],
   articles: Article[],
   session: string,
@@ -343,7 +346,7 @@ async function geminiWrite(
   });
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey() },
@@ -352,7 +355,7 @@ async function geminiWrite(
         contents: [{ role: "user", parts: [{ text: user }] }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.3 },
       }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
     },
   );
   if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -387,25 +390,29 @@ export async function generateFreeBriefing(session: string): Promise<GenerationR
   }
   const levels = lv.levels as BriefingPayload["levels"];
 
-  let written: Written;
+  let written: Written | null = null;
   let model = "template";
   if (geminiKey() && news.articles.length) {
-    try {
-      written = await geminiWrite(levels, news.articles, session);
-      model = GEMINI_MODEL;
-      // The gate rejects big numbers in prose that aren't declared levels (e.g.
-      // "1,200 jobs"). Rather than lose the day's brief, fall back to the template.
-      const prose = [written.headline, written.summary, ...written.drivers.map((d) => d.detail)].join(" ");
-      if (/\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{4,6}\.\d{1,2}\b/.test(prose)) {
-        console.warn("[briefing] Gemini prose contains large figures; using template");
-        written = templateWrite(levels, news.articles, session);
-        model = "template";
+    for (const m of GEMINI_MODELS) {
+      try {
+        const w = await geminiWrite(m, levels, news.articles, session);
+        // The gate rejects big numbers in prose that aren't declared levels (e.g.
+        // "1,200 jobs"). Rather than lose the day's brief, try the next writer.
+        const prose = [w.headline, w.summary, ...w.drivers.map((d) => d.detail)].join(" ");
+        if (/\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{4,6}\.\d{1,2}\b/.test(prose)) {
+          console.warn(`[briefing] ${m} prose contains large figures; trying next writer`);
+          continue;
+        }
+        written = w;
+        model = m;
+        break;
+      } catch (e) {
+        console.warn(`[briefing] ${m} failed:`, e instanceof Error ? e.message : e);
       }
-    } catch (e) {
-      console.warn("[briefing] Gemini failed, using template:", e instanceof Error ? e.message : e);
-      written = templateWrite(levels, news.articles, session);
     }
-  } else {
+  }
+  if (!written) {
+    if (geminiKey()) console.warn("[briefing] all Gemini models failed; using template");
     written = templateWrite(levels, news.articles, session);
   }
 
