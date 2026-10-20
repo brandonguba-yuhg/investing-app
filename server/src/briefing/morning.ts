@@ -90,7 +90,9 @@ async function fetchMove(
 
   if (edition === "premarket" && !/pre/i.test(status)) return null;
   if (edition === "open") {
-    if (/pre|closed/i.test(status)) return null;
+    // Statuses seen: "Pre-Market", "Open", "After-Hours", "Closed". After the
+    // close the quotes are after-hours trades, not the opening move.
+    if (!/\bopen\b/i.test(status) || /pre|after|closed/i.test(status)) return null;
     if (at.minutes != null && at.minutes < OPEN_ET_MINUTES) return null;
   }
 
