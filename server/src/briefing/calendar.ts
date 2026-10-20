@@ -58,7 +58,7 @@ export function isTradingDay(isoDate: string): boolean {
   return wd !== 0 && wd !== 6 && !NYSE_HOLIDAYS.has(isoDate);
 }
 
-function previousTradingDay(isoDate: string): string {
+export function previousTradingDay(isoDate: string): string {
   let cursor = shiftDays(isoDate, -1);
   for (let i = 0; i < 10; i++) {
     if (isTradingDay(cursor)) return cursor;

@@ -15,7 +15,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as ai from "./ai.js";
-import { expectedSessionDate } from "./briefing/calendar.js";
+import { expectedSessionDate, previousTradingDay } from "./briefing/calendar.js";
 import { assertFreshness } from "./briefing/freshness.js";
 import { generateFreeBriefing, LevelsNotReadyError } from "./briefing/free.js";
 import type {
@@ -179,8 +179,10 @@ export function refresh(): Promise<MarketBriefing | null> {
   return generating;
 }
 
-async function doRefresh(): Promise<MarketBriefing | null> {
-  const expectedSession = expectedSessionDate();
+async function doRefresh(
+  expectedSession: string = expectedSessionDate(),
+  allowFallback = true,
+): Promise<MarketBriefing | null> {
   let result: GenerationResult;
   try {
     result =
@@ -191,6 +193,13 @@ async function doRefresh(): Promise<MarketBriefing | null> {
     lastFailureAt = Date.now();
     if (e instanceof LevelsNotReadyError) {
       console.log(`[briefing] waiting: ${e.message}`);
+      // Cold start (each Railway deploy wipes the cache) between 4:15pm and
+      // whenever FRED posts the close: rather than showing "preparing" all
+      // evening, publish the previous session now. isFresh() stays false, so
+      // the scheduler keeps trying for the new session.
+      if (allowFallback && !current) {
+        return doRefresh(previousTradingDay(expectedSession), false);
+      }
       return null;
     }
     throw e;
