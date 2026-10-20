@@ -2086,11 +2086,28 @@ body, html, #root {
   color: var(--text);
 }
 
+.briefing-item {
+  display: flex;
+  flex-direction: column;
+}
+
 .briefing-item p {
   margin: 0;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--muted);
+}
+
+.briefing-item-link {
+  margin-top: auto;
+  padding-top: 12px;
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.briefing-item-link:hover {
+  text-decoration: underline;
 }
 
 .briefing-sources {

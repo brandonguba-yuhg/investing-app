@@ -114,26 +114,64 @@ async function nasdaqCloses(symbol: string, session: string): Promise<Close[]> {
   });
 }
 
+/**
+ * Nasdaq's live quote endpoint. Its daily-history endpoint (and FRED) can take
+ * until around midnight ET to post a session's close; this one has the final
+ * print minutes after 4pm. Only accepted once Nasdaq reports the market as
+ * after-hours/closed and the last trade is from the requested session. During
+ * the day the timestamp reads "Oct 20, 2026 3:51 PM ET"; after the close it
+ * drops the time ("Oct 20, 2026").
+ */
+async function nasdaqLiveClose(symbol: string, session: string, url: string): Promise<FetchedLevel | null> {
+  const body = JSON.parse(
+    await fetchText(`https://api.nasdaq.com/api/quote/${symbol}/info?assetclass=index`),
+  ) as {
+    data?: {
+      marketStatus?: string;
+      primaryData?: { lastSalePrice?: string; percentageChange?: string; lastTradeTimestamp?: string };
+    };
+  };
+  const d = body.data;
+  const ts = d?.primaryData?.lastTradeTimestamp
+    ?.trim()
+    .match(/^(\w{3}) (\d{1,2}), (\d{4})(?: (\d{1,2}):(\d{2}) (AM|PM) ET)?$/);
+  if (!d || !ts || !/after|closed/i.test(d.marketStatus ?? "")) return null;
+  const month = "JanFebMarAprMayJunJulAugSepOctNovDec".indexOf(ts[1]) / 3 + 1;
+  const date = `${ts[3]}-${String(month).padStart(2, "0")}-${ts[2].padStart(2, "0")}`;
+  if (date !== session) return null;
+  if (ts[4]) {
+    const hour24 = (Number(ts[4]) % 12) + (ts[6] === "PM" ? 12 : 0);
+    if (hour24 < 16) return null;
+  }
+  const value = Number((d.primaryData?.lastSalePrice ?? "").replace(/[$,]/g, ""));
+  const pct = Number((d.primaryData?.percentageChange ?? "").replace(/[%+]/g, ""));
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return {
+    level: { value: round(value, 2), change_pct: Number.isFinite(pct) ? round(pct, 2) : null, source_url: url },
+    date: session,
+  };
+}
+
 interface LevelSource {
   key: keyof BriefingPayload["levels"];
   /** Tried in order; first one that has the session's close wins. */
-  tries: Array<{ url: string; load: (session: string) => Promise<Close[]> }>;
+  tries: Array<{ url: string; load: (session: string) => Promise<FetchedLevel | null> }>;
 }
 
-const fred = (series: string) => ({
-  url: `https://fred.stlouisfed.org/series/${series}`,
-  load: (s: string) => fredCloses(series, s),
-});
+const fred = (series: string) => {
+  const url = `https://fred.stlouisfed.org/series/${series}`;
+  return { url, load: async (s: string) => levelFor(await fredCloses(series, s), s, url) };
+};
+
+const NDX_URL = "https://www.nasdaq.com/market-activity/index/ndx/historical";
 
 const LEVEL_SOURCES: LevelSource[] = [
   { key: "spx", tries: [fred("SP500")] },
   {
     key: "ndx",
     tries: [
-      {
-        url: "https://www.nasdaq.com/market-activity/index/ndx/historical",
-        load: (s) => nasdaqCloses("NDX", s),
-      },
+      { url: NDX_URL, load: async (s) => levelFor(await nasdaqCloses("NDX", s), s, NDX_URL) },
+      { url: NDX_URL, load: (s) => nasdaqLiveClose("NDX", s, NDX_URL) },
       fred("NASDAQ100"),
     ],
   },
@@ -149,7 +187,7 @@ async function fetchLevels(
     LEVEL_SOURCES.map(async (src) => {
       for (const t of src.tries) {
         try {
-          const lvl = levelFor(await t.load(session), session, t.url);
+          const lvl = await t.load(session);
           if (lvl) return { key: src.key, ...lvl };
         } catch (e) {
           console.warn(`[briefing] ${src.key} source failed (${t.url}):`, e instanceof Error ? e.message : e);
@@ -201,6 +239,8 @@ function decode(s: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&(apos|#39);/g, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&nbsp;/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -279,7 +319,71 @@ const TAPE_WORDS = /\b(stocks|S&P|Dow|Nasdaq|Wall Street|equities|sell-?off|rall
 const MACRO_WORDS =
   /\b(Fed|rates?|Treasury|yields?|inflation|CPI|PPI|jobs|payrolls|oil|tariffs?|dollar|recession)\b/i;
 
-function templateWrite(levels: BriefingPayload["levels"], articles: Article[], session: string): Written {
+// Same pattern the gate uses for index-magnitude numbers in prose (GATE 8).
+const BIG_NUMBER = /\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{4,6}\.\d{1,2}\b/g;
+
+/**
+ * Drop any sentence carrying a big figure (e.g. "1,200 jobs") that isn't one of
+ * the declared levels. The gate would reject the whole brief for it; losing one
+ * sentence is the better trade.
+ */
+function dropUnbackedNumbers(text: string, levels: BriefingPayload["levels"]): string {
+  const declared = Object.values(levels).filter(Boolean).map((l) => l!.value);
+  return sentencesOf(text)
+    .filter((s) =>
+      (s.match(BIG_NUMBER) ?? []).every((m) => {
+        const n = Number(m.replace(/,/g, ""));
+        return n < 1000 || declared.some((d) => Math.abs(d - n) < 0.51);
+      }),
+    )
+    .join(" ");
+}
+
+/**
+ * Split on sentence-ending punctuation followed by whitespace and a capital or
+ * quote, so "U.S. housing" and "6.43%" stay intact.
+ */
+function sentencesOf(text: string): string[] {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?]["”’)]?)\s+(?=["“‘(]?[A-Z0-9])/)
+    .filter(Boolean);
+}
+
+/**
+ * Body text of an article, so driver write-ups can go beyond the one-line RSS
+ * blurb. CNBC serves full pages; Investing.com and Seeking Alpha return 403 to
+ * servers, in which case we fall back to the RSS description.
+ */
+async function articleText(url: string): Promise<string> {
+  try {
+    const html = await fetchText(url);
+    const paras = (html.match(/<p[^>]*>([\s\S]*?)<\/p>/gi) ?? [])
+      .map((p) => decode(p))
+      .filter(
+        (p) =>
+          p.length >= 60 &&
+          !/cookie|subscribe|newsletter|sign up|all rights reserved/i.test(p) &&
+          // Site menus flatten into glued words ("LivestreamMenuMake It"); prose doesn't.
+          (p.match(/[a-z][A-Z]/g) ?? []).length < 3,
+      );
+    return paras.join(" ").slice(0, 3500);
+  } catch {
+    return "";
+  }
+}
+
+function firstSentences(text: string, max: number): string {
+  return sentencesOf(text).slice(0, max).join(" ");
+}
+
+function templateWrite(
+  levels: BriefingPayload["levels"],
+  articles: Article[],
+  bodies: Map<string, string>,
+  session: string,
+): Written {
   const core = (["spx", "ndx", "dji"] as const).map((k) => ({ k, l: levels[k] }));
   const chg = core.map((c) => c.l.change_pct ?? 0);
   const up = chg.filter((c) => c > 0.05).length;
@@ -301,50 +405,36 @@ function templateWrite(levels: BriefingPayload["levels"], articles: Article[], s
   if (levels.vix) summary += ` The VIX ended at ${levels.vix.value.toFixed(2)}.`;
   if (levels.ust10y) summary += ` The 10-year Treasury yield was ${levels.ust10y.value.toFixed(2)}%.`;
 
+  const picks = rankForTemplate(articles);
+  return {
+    headline,
+    summary,
+    drivers: picks.map((a) => {
+      const body = dropUnbackedNumbers(firstSentences(bodies.get(a.url) ?? "", 4), levels);
+      const blurb = dropUnbackedNumbers(a.description, levels);
+      return {
+        title: a.title,
+        detail: body || blurb || `Reported by ${a.source}.`,
+        source_url: a.url,
+      };
+    }),
+  };
+}
+
+function rankForTemplate(articles: Article[]): Article[] {
   const score = (a: Article) => (TAPE_WORDS.test(a.title) ? 2 : 0) + (MACRO_WORDS.test(a.title) ? 1 : 0);
   // Stable sort keeps chronological order (closest to the session first) within a tier.
   const ranked = [...articles].sort((a, b) => score(b) - score(a));
   const picks = ranked.filter((a) => score(a) > 0).slice(0, 4);
-  if (picks.length === 0) picks.push(...articles.slice(0, 3));
-  return {
-    headline,
-    summary,
-    drivers: picks.map((a) => ({
-      title: a.title,
-      detail: a.description || `Reported by ${a.source}.`,
-      source_url: a.url,
-    })),
-  };
+  // Top up to three with the stories published closest to the session.
+  for (const a of articles) {
+    if (picks.length >= 3) break;
+    if (!picks.includes(a)) picks.push(a);
+  }
+  return picks;
 }
 
-async function geminiWrite(
-  model: string,
-  levels: BriefingPayload["levels"],
-  articles: Article[],
-  session: string,
-): Promise<Written> {
-  const list = articles.slice(-60);
-  const system = [
-    "You are the markets editor for Voyance, an equity-research app. You write the daily briefing",
-    `for the US trading session dated ${session}, using ONLY the closing levels and articles provided.`,
-    "Rules, all non-negotiable:",
-    "1. Never state facts or figures that are not in the provided material. No outside knowledge.",
-    "2. Do NOT write index levels (e.g. 7,659.44) anywhere in prose. Percent moves from the levels block are fine.",
-    "3. Each driver must reference one article by its numeric `id` from the list.",
-    `4. Prefer articles that explain why markets moved in the ${session} session. Ignore unrelated stories.`,
-    "Return ONLY JSON matching:",
-    '{ "headline": "one line, no figures", "summary": "2-5 sentences on what happened and why",',
-    '  "drivers": [{ "id": number, "title": "short", "detail": "1-2 sentences" }] }',
-    "Use 2-4 drivers.",
-  ].join("\n");
-  const user = JSON.stringify({
-    session,
-    levels: Object.fromEntries(
-      Object.entries(levels).map(([k, l]) => [k, { close: l!.value, change_pct: l!.change_pct }]),
-    ),
-    articles: list.map((a, id) => ({ id, source: a.source, published: a.date, title: a.title, summary: a.description })),
-  });
-
+async function callGemini(model: string, system: string, user: string): Promise<unknown> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -363,20 +453,102 @@ async function geminiWrite(
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
   const text = body.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-  const out = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "")) as {
+  return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+}
+
+const PROMPT_NAMES: Record<string, string> = {
+  spx: "S&P 500",
+  ndx: "Nasdaq 100",
+  dji: "Dow Jones Industrial Average",
+  vix: "VIX volatility index",
+  ust10y: "10-year Treasury yield (%)",
+};
+
+// Full names so the writer doesn't guess (e.g. "Nasdaq Composite" for ndx).
+function levelsForPrompt(levels: BriefingPayload["levels"]) {
+  return Object.entries(levels).map(([k, l]) => ({
+    name: PROMPT_NAMES[k] ?? k,
+    close: l!.value,
+    change_pct: l!.change_pct,
+  }));
+}
+
+/** Step 1: choose which 3-4 stories explain the session, from headlines alone. */
+async function geminiPick(model: string, levels: BriefingPayload["levels"], articles: Article[], session: string) {
+  const system = [
+    "You are the markets editor for Voyance, an equity-research app.",
+    `From the article list, pick the 3-4 stories that best explain why US stocks moved in the ${session} session`,
+    "(Fed/rates, inflation and economic data, geopolitics, big sector, commodity or mega-cap moves).",
+    "Skip single-stock analyst notes and stories unrelated to that session.",
+    'Return ONLY JSON: { "ids": [number, ...] }',
+  ].join("\n");
+  const user = JSON.stringify({
+    session,
+    levels: levelsForPrompt(levels),
+    articles: articles.map((a, id) => ({ id, source: a.source, published: a.date, title: a.title, summary: a.description })),
+  });
+  const out = (await callGemini(model, system, user)) as { ids?: unknown[] };
+  const picks = (out.ids ?? []).flatMap((id) => (typeof id === "number" && articles[id] ? [articles[id]] : []));
+  if (!picks.length) throw new Error("Gemini picked no articles");
+  return [...new Set(picks)].slice(0, 4);
+}
+
+/** Step 2: write the brief from the picked stories' full text. */
+async function geminiWrite(
+  model: string,
+  levels: BriefingPayload["levels"],
+  picks: Article[],
+  bodies: Map<string, string>,
+  session: string,
+): Promise<Written> {
+  const system = [
+    "You are the markets editor for Voyance, an equity-research app. You write the daily briefing",
+    `for the US trading session dated ${session}, using ONLY the closing levels and articles provided.`,
+    "Rules, all non-negotiable:",
+    "1. Never state facts or figures that are not in the provided material. No outside knowledge.",
+    "2. Do NOT write index levels (e.g. 7,659.44) or any number of 1,000 or more written with commas",
+    '   or decimals. Use percentages, or words like "$2 trillion" or "about 1.2 million".',
+    "3. Each driver must reference one article by its numeric `id`, and its detail must come from that article.",
+    "4. Write for an investor: what happened, why it happened, and why it matters for stocks.",
+    "Return ONLY JSON matching:",
+    '{ "headline": "one line, no figures",',
+    '  "summary": "4-6 sentences: how the major indexes moved (name each index exactly as given, with its percent change) and the main reasons why",',
+    '  "drivers": [{ "id": number, "title": "short, specific headline",',
+    '                "detail": "3-5 sentences (60-110 words) explaining the story, the key facts and why it moved markets" }] }',
+    "Write one driver per article provided.",
+  ].join("\n");
+  const user = JSON.stringify({
+    session,
+    levels: levelsForPrompt(levels),
+    articles: picks.map((a, id) => ({
+      id,
+      source: a.source,
+      published: a.date,
+      title: a.title,
+      text: bodies.get(a.url) || a.description,
+    })),
+  });
+  const out = (await callGemini(model, system, user)) as {
     headline?: string;
     summary?: string;
     drivers?: Array<{ id?: number; title?: string; detail?: string }>;
   };
   const drivers = (out.drivers ?? []).flatMap((d) => {
-    const a = typeof d.id === "number" ? list[d.id] : undefined;
-    if (!a || !d.title || !d.detail) return [];
-    return [{ title: d.title, detail: d.detail, source_url: a.url }];
+    const a = typeof d.id === "number" ? picks[d.id] : undefined;
+    const detail = dropUnbackedNumbers(d.detail ?? "", levels);
+    if (!a || !d.title || !detail) return [];
+    return [{ title: d.title, detail, source_url: a.url }];
   });
-  if (!out.headline || !out.summary || drivers.length === 0) {
+  const summary = dropUnbackedNumbers(out.summary ?? "", levels);
+  if (!out.headline || summary.length < 40 || drivers.length === 0) {
     throw new Error("Gemini returned an incomplete briefing");
   }
-  return { headline: out.headline, summary: out.summary, drivers };
+  return { headline: dropUnbackedNumbers(out.headline, levels) || out.headline, summary, drivers };
+}
+
+async function fetchBodies(picks: Article[]): Promise<Map<string, string>> {
+  const texts = await Promise.all(picks.map((a) => articleText(a.url)));
+  return new Map(picks.map((a, i) => [a.url, texts[i]]));
 }
 
 // ---------- entry point ----------
@@ -389,21 +561,20 @@ export async function generateFreeBriefing(session: string): Promise<GenerationR
     throw new LevelsNotReadyError(`${session} close not published yet for ${missing.join(", ")}`);
   }
   const levels = lv.levels as BriefingPayload["levels"];
+  // Feature only stories that come with real text to write from. Investing.com
+  // and Seeking Alpha feeds carry titles only (and block article fetches), so a
+  // write-up for them would have to be invented from the headline.
+  const withText = news.articles.filter((a) => a.description.length >= 40);
+  const candidates = (withText.length >= 3 ? withText : news.articles).slice(-60);
 
   let written: Written | null = null;
   let model = "template";
-  if (geminiKey() && news.articles.length) {
+  if (geminiKey() && candidates.length) {
     for (const m of GEMINI_MODELS) {
       try {
-        const w = await geminiWrite(m, levels, news.articles, session);
-        // The gate rejects big numbers in prose that aren't declared levels (e.g.
-        // "1,200 jobs"). Rather than lose the day's brief, try the next writer.
-        const prose = [w.headline, w.summary, ...w.drivers.map((d) => d.detail)].join(" ");
-        if (/\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{4,6}\.\d{1,2}\b/.test(prose)) {
-          console.warn(`[briefing] ${m} prose contains large figures; trying next writer`);
-          continue;
-        }
-        written = w;
+        const picks = await geminiPick(m, levels, candidates, session);
+        const bodies = await fetchBodies(picks);
+        written = await geminiWrite(m, levels, picks, bodies, session);
         model = m;
         break;
       } catch (e) {
@@ -413,7 +584,7 @@ export async function generateFreeBriefing(session: string): Promise<GenerationR
   }
   if (!written) {
     if (geminiKey()) console.warn("[briefing] all Gemini models failed; using template");
-    written = templateWrite(levels, news.articles, session);
+    written = templateWrite(levels, candidates, await fetchBodies(rankForTemplate(candidates)), session);
   }
 
   const used = new Set(written.drivers.map((d) => d.source_url));

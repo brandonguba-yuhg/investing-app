@@ -160,6 +160,8 @@ export interface AIAnswer {
 export interface BriefingItem {
   heading: string;
   summary: string;
+  /** The article this item is based on. */
+  url?: string;
 }
 
 /**

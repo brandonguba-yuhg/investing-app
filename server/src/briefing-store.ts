@@ -117,6 +117,7 @@ function buildBriefing(
   const items = payload.drivers.map((d) => ({
     heading: ai.stripCitations(d.title),
     summary: ai.stripCitations(d.detail),
+    url: d.source_url,
   }));
 
   // Sources shown in the "Sources (N)" UI panel — derived from cited URLs in
