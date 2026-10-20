@@ -15,7 +15,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as ai from "./ai.js";
-import { expectedSessionDate, previousTradingDay } from "./briefing/calendar.js";
+import { expectedSessionDate, isTradingDay, previousTradingDay } from "./briefing/calendar.js";
+import { dueEdition, generateMorningBriefing } from "./briefing/morning.js";
 import { assertFreshness } from "./briefing/freshness.js";
 import { generateFreeBriefing, LevelsNotReadyError } from "./briefing/free.js";
 import type {
@@ -36,18 +37,24 @@ const FAILURES_LOG =
   process.env.BRIEFING_FAILURES_PATH ||
   path.join(os.tmpdir(), "investing-briefing-failures.log");
 
-// How often the scheduler checks whether a new session's briefing is due. A
-// briefing describes a closed session, so once accepted it isn't regenerated.
-const CHECK_MS = 30 * 60 * 1000;
-// After a failed/early attempt (e.g. FRED hasn't posted the close yet), don't
-// retry on every page load — wait this long.
-const RETRY_COOLDOWN_MS = 20 * 60 * 1000;
+// The briefing is a morning product: a "premarket" edition at 7:00am ET and an
+// "open" edition at 9:40am ET on trading days (see briefing/morning.ts). The
+// scheduler checks every minute whether an edition is due; checks are free
+// when nothing is.
+const CHECK_MS = 60 * 1000;
+// After a failed attempt, don't retry on every page load. Data that simply
+// isn't out yet (opening quotes, the prior close) is retried sooner than a
+// gate rejection.
+const RETRY_NOT_READY_MS = 5 * 60 * 1000;
+const RETRY_REJECTED_MS = 20 * 60 * 1000;
+
+const EDITION_RANK = { recap: 0, premarket: 1, open: 2 } as const;
 
 // "free" (default): FRED/Nasdaq closes + RSS news + Gemini free tier / template.
 // "claude": the original Claude + web_search run (bills the Anthropic account).
 const PROVIDER = (process.env.BRIEFING_PROVIDER ?? "free").toLowerCase();
 
-let lastFailureAt = 0;
+let retryAt = 0;
 
 let current: MarketBriefing | null = null;
 // Dedupe concurrent generations: a single in-flight promise shared by callers.
@@ -58,13 +65,22 @@ export function getCurrent(): MarketBriefing | null {
   return current;
 }
 
-/** True when we already hold today's session's briefing. */
+/** True when we already hold the briefing that's due now. */
 export function isFresh(): boolean {
   if (!current) return false;
-  // Prefer the gate-validated session_date; fall back to legacy `date` for
-  // briefs persisted before the gate was wired in.
-  const held = current.payload?.session_date ?? current.date;
-  return held === expectedSessionDate();
+  if (PROVIDER === "claude") {
+    // Claude provider still produces the after-close recap.
+    const held = current.payload?.session_date ?? current.date;
+    return held === expectedSessionDate();
+  }
+  const due = dueEdition(new Date(), isTradingDay);
+  // Outside the morning window (overnight, weekends) keep the latest edition.
+  if (!due) return true;
+  const p = current.payload;
+  return (
+    p?.brief_date === due.today &&
+    EDITION_RANK[p.edition ?? "recap"] >= EDITION_RANK[due.edition]
+  );
 }
 
 /** Load a persisted briefing from disk into memory (best-effort). */
@@ -127,11 +143,12 @@ function buildBriefing(
   for (const lvl of Object.values(payload.levels)) {
     if (lvl?.source_url) cited.add(lvl.source_url);
   }
+  for (const m of payload.moves ?? []) cited.add(m.source_url);
   for (const d of payload.drivers) if (d.source_url) cited.add(d.source_url);
   const sources = [...cited].map((url) => ({ title: hostOf(url) ?? url, url }));
 
   return {
-    date: payload.session_date,
+    date: payload.brief_date ?? payload.session_date,
     headline: ai.stripCitations(payload.headline),
     overview: ai.stripCitations(payload.summary),
     items,
@@ -179,29 +196,62 @@ export function refresh(): Promise<MarketBriefing | null> {
   return generating;
 }
 
-async function doRefresh(
-  expectedSession: string = expectedSessionDate(),
-  allowFallback = true,
+async function doRefresh(): Promise<MarketBriefing | null> {
+  if (PROVIDER === "claude") return recap(expectedSessionDate(), true);
+
+  const due = dueEdition(new Date(), isTradingDay);
+  if (due) {
+    const session = previousTradingDay(due.today);
+    // Hand the 7am moves to the 9:40 run so it can call out a flip in direction.
+    const premarket =
+      due.edition === "open" &&
+      current?.payload?.brief_date === due.today &&
+      current.payload.edition === "premarket"
+        ? current.payload.moves
+        : undefined;
+    const brief = await runGated(
+      () => generateMorningBriefing(due.edition, due.today, session, premarket),
+      session,
+      `${due.edition} edition for ${due.today}`,
+    );
+    if (brief || current) return brief;
+    // Cold start (each Railway deploy wipes the cache) and the edition's data
+    // isn't out yet: show the last close's recap meanwhile.
+  }
+  // Cold start outside the morning window (overnight, weekends, or before the
+  // day's first edition): publish a recap of the last completed session.
+  return recap(expectedSessionDate(), true);
+}
+
+/** After-close recap of `session`; on a cold start, falls back one session. */
+async function recap(session: string, allowFallback: boolean): Promise<MarketBriefing | null> {
+  const brief = await runGated(
+    () => (PROVIDER === "claude" ? ai.getMarketBriefing() : generateFreeBriefing(session)),
+    session,
+    `recap of ${session}`,
+  );
+  // Between 4:15pm and whenever FRED posts the close, the newest session isn't
+  // available yet; rather than "preparing" all evening, show the one before.
+  if (!brief && allowFallback && !current) return recap(previousTradingDay(session), false);
+  return brief;
+}
+
+/** Generate, run the eight-gate freshness check, and publish if it passes. */
+async function runGated(
+  generate: () => Promise<GenerationResult>,
+  expectedSession: string,
+  label: string,
 ): Promise<MarketBriefing | null> {
   let result: GenerationResult;
   try {
-    result =
-      PROVIDER === "claude"
-        ? await ai.getMarketBriefing()
-        : await generateFreeBriefing(expectedSession);
+    result = await generate();
   } catch (e) {
-    lastFailureAt = Date.now();
     if (e instanceof LevelsNotReadyError) {
-      console.log(`[briefing] waiting: ${e.message}`);
-      // Cold start (each Railway deploy wipes the cache) between 4:15pm and
-      // whenever FRED posts the close: rather than showing "preparing" all
-      // evening, publish the previous session now. isFresh() stays false, so
-      // the scheduler keeps trying for the new session.
-      if (allowFallback && !current) {
-        return doRefresh(previousTradingDay(expectedSession), false);
-      }
+      retryAt = Date.now() + RETRY_NOT_READY_MS;
+      console.log(`[briefing] waiting (${label}): ${e.message}`);
       return null;
     }
+    retryAt = Date.now() + RETRY_REJECTED_MS;
     throw e;
   }
 
@@ -212,11 +262,9 @@ async function doRefresh(
   });
 
   if (!outcome.ok || !outcome.payload) {
-    lastFailureAt = Date.now();
+    retryAt = Date.now() + RETRY_REJECTED_MS;
     const codes = outcome.violations.map((v) => v.code).join(", ");
-    console.warn(
-      `[briefing] REJECTED for session ${expectedSession} — ${codes || "no codes"}`,
-    );
+    console.warn(`[briefing] REJECTED ${label} — ${codes || "no codes"}`);
     for (const v of outcome.violations) {
       console.warn(`[briefing]   ${v.code}: ${v.detail}`);
     }
@@ -238,19 +286,20 @@ async function doRefresh(
   current = brief;
   await persist(brief);
   console.log(
-    `[briefing] accepted session ${brief.payload?.session_date}` +
-      ` (${result.searchCount} searches, ${result.searchUrls.length} URLs retrieved)`,
+    `[briefing] accepted ${label} via ${result.model}` +
+      ` (${result.searchCount} sources, ${result.searchUrls.length} URLs retrieved)`,
   );
   return brief;
 }
 
 /**
- * Kick off a background regeneration if we don't already hold today's briefing.
- * Non-blocking: callers serve whatever they have and let this update in place.
+ * Kick off a background regeneration if we don't already hold the briefing
+ * that's due. Non-blocking: callers serve whatever they have and let this
+ * update in place.
  */
 export function ensureFresh(): void {
   if (isFresh() || generating) return;
-  if (Date.now() - lastFailureAt < RETRY_COOLDOWN_MS) return;
+  if (Date.now() < retryAt) return;
   void refresh().catch((e) =>
     console.error("[briefing] background refresh failed:", e instanceof Error ? e.message : e),
   );
@@ -261,7 +310,7 @@ export function enabled(): boolean {
   return PROVIDER === "claude" ? ai.aiEnabled() : true;
 }
 
-/** Warm the cache on boot and check for a new session on an interval. */
+/** Warm the cache on boot and check every minute whether an edition is due. */
 export function startScheduler(): void {
   if (!enabled()) return;
   ensureFresh();

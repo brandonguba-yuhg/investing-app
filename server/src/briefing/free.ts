@@ -26,7 +26,7 @@ const UA = "Mozilla/5.0 (compatible; VoyanceBriefing/1.0)";
 // break when a pinned version is retired. Tried in order: free-tier Flash is often
 // overloaded (503 "high demand"), so Flash-Lite backs it up before the template.
 // Override with GEMINI_MODEL (comma-separated for a custom fallback order).
-const GEMINI_MODELS = (process.env.GEMINI_MODEL || "gemini-flash-latest,gemini-flash-lite-latest")
+export const GEMINI_MODELS = (process.env.GEMINI_MODEL || "gemini-flash-latest,gemini-flash-lite-latest")
   .split(",")
   .map((m) => m.trim())
   .filter(Boolean);
@@ -35,11 +35,11 @@ const GEMINI_TIMEOUT_MS = 45_000;
 /** Thrown when the session's closes aren't published yet. Not a gate failure — just early. */
 export class LevelsNotReadyError extends Error {}
 
-function geminiKey(): string {
+export function geminiKey(): string {
   return (process.env.GEMINI_API_KEY ?? "").trim().replace(/^["']|["']$/g, "");
 }
 
-async function fetchText(url: string): Promise<string> {
+export async function fetchText(url: string): Promise<string> {
   const res = await fetch(url, {
     headers: { "User-Agent": UA, Accept: "*/*" },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -48,7 +48,7 @@ async function fetchText(url: string): Promise<string> {
   return res.text();
 }
 
-function etDate(d: Date): string {
+export function etDate(d: Date): string {
   return etParts(d).date;
 }
 
@@ -75,7 +75,7 @@ function levelFor(closes: Close[], session: string, sourceUrl: string): FetchedL
   return { level: { value, change_pct, source_url: sourceUrl }, date: session };
 }
 
-function round(n: number, dp: number): number {
+export function round(n: number, dp: number): number {
   const f = 10 ** dp;
   return Math.round(n * f) / f;
 }
@@ -180,7 +180,7 @@ const LEVEL_SOURCES: LevelSource[] = [
   { key: "ust10y", tries: [fred("DGS10")] },
 ];
 
-async function fetchLevels(
+export async function fetchLevels(
   session: string,
 ): Promise<{ levels: Partial<BriefingPayload["levels"]>; urls: string[]; dates: string[] }> {
   const results = await Promise.all(
@@ -213,7 +213,7 @@ async function fetchLevels(
 
 // ---------- news ----------
 
-interface Article {
+export interface Article {
   title: string;
   description: string;
   url: string;
@@ -275,7 +275,7 @@ async function fetchFeed(feed: { source: string; url: string }): Promise<Article
   });
 }
 
-async function fetchNews(session: string): Promise<{ articles: Article[]; feedsOk: number }> {
+export async function fetchNews(session: string): Promise<{ articles: Article[]; feedsOk: number }> {
   const settled = await Promise.allSettled(FEEDS.map(fetchFeed));
   const now = Date.now();
   const seen = new Set<string>();
@@ -302,15 +302,15 @@ async function fetchNews(session: string): Promise<{ articles: Article[]; feedsO
 
 // ---------- writing ----------
 
-interface Written {
+export interface Written {
   headline: string;
   summary: string;
   drivers: Array<{ title: string; detail: string; source_url: string }>;
 }
 
-const NAMES: Record<string, string> = { spx: "S&P 500", ndx: "Nasdaq 100", dji: "Dow" };
+export const NAMES: Record<string, string> = { spx: "S&P 500", ndx: "Nasdaq 100", dji: "Dow" };
 
-function fmt(n: number): string {
+export function fmt(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -327,7 +327,7 @@ const BIG_NUMBER = /\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d{4,6}\.\d{1,2}\b/g;
  * the declared levels. The gate would reject the whole brief for it; losing one
  * sentence is the better trade.
  */
-function dropUnbackedNumbers(text: string, levels: BriefingPayload["levels"]): string {
+export function dropUnbackedNumbers(text: string, levels: BriefingPayload["levels"]): string {
   const declared = Object.values(levels).filter(Boolean).map((l) => l!.value);
   return sentencesOf(text)
     .filter((s) =>
@@ -374,7 +374,7 @@ async function articleText(url: string): Promise<string> {
   }
 }
 
-function firstSentences(text: string, max: number): string {
+export function firstSentences(text: string, max: number): string {
   return sentencesOf(text).slice(0, max).join(" ");
 }
 
@@ -421,7 +421,7 @@ function templateWrite(
   };
 }
 
-function rankForTemplate(articles: Article[]): Article[] {
+export function rankForTemplate(articles: Article[]): Article[] {
   const score = (a: Article) => (TAPE_WORDS.test(a.title) ? 2 : 0) + (MACRO_WORDS.test(a.title) ? 1 : 0);
   // Stable sort keeps chronological order (closest to the session first) within a tier.
   const ranked = [...articles].sort((a, b) => score(b) - score(a));
@@ -434,7 +434,7 @@ function rankForTemplate(articles: Article[]): Article[] {
   return picks;
 }
 
-async function callGemini(model: string, system: string, user: string): Promise<unknown> {
+export async function callGemini(model: string, system: string, user: string): Promise<unknown> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -465,7 +465,7 @@ const PROMPT_NAMES: Record<string, string> = {
 };
 
 // Full names so the writer doesn't guess (e.g. "Nasdaq Composite" for ndx).
-function levelsForPrompt(levels: BriefingPayload["levels"]) {
+export function levelsForPrompt(levels: BriefingPayload["levels"]) {
   return Object.entries(levels).map(([k, l]) => ({
     name: PROMPT_NAMES[k] ?? k,
     close: l!.value,
@@ -546,7 +546,7 @@ async function geminiWrite(
   return { headline: dropUnbackedNumbers(out.headline, levels) || out.headline, summary, drivers };
 }
 
-async function fetchBodies(picks: Article[]): Promise<Map<string, string>> {
+export async function fetchBodies(picks: Article[]): Promise<Map<string, string>> {
   const texts = await Promise.all(picks.map((a) => articleText(a.url)));
   return new Map(picks.map((a, i) => [a.url, texts[i]]));
 }

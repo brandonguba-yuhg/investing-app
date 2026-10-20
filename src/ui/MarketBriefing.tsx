@@ -36,6 +36,16 @@ const PREPARING_RETRY_MS = 6000;
 const REFOCUS_MIN_MS = 60_000;
 const POLL_MS = 15 * 60_000;
 
+const EDITION_LABEL = {
+  premarket: "Pre-Market Briefing",
+  open: "Opening Bell",
+  recap: "Market Recap",
+} as const;
+
+function formatPct(v: number): string {
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
+
 function hostOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -151,13 +161,39 @@ export function MarketBriefing({ fallback }: Props) {
     year: "numeric",
   });
 
+  const edition = briefing.payload?.edition ?? "recap";
+  const moves = briefing.payload?.moves ?? [];
+  const premarket = briefing.payload?.premarket_moves ?? [];
+  const asOf = moves[0]?.as_of.replace(/^.*?(\d{1,2}:\d{2} [AP]M ET)$/, "$1");
+
   return (
     <div className="briefing">
       <div className="briefing-head">
         <div className="briefing-eyebrow">
-          Market Briefing · {dateLabel}
+          {EDITION_LABEL[edition]} · {dateLabel}
+          {asOf && /ET$/.test(asOf) && ` · as of ${asOf}`}
         </div>
         <h1 className="briefing-headline">{briefing.headline}</h1>
+        {moves.length > 0 && (
+          <div className="briefing-moves">
+            {moves.map((m) => {
+              const pre = premarket.find((p) => p.symbol === m.symbol);
+              return (
+                <div className="briefing-move" key={m.symbol}>
+                  <span className="briefing-move-name">
+                    {m.symbol} <span className="briefing-move-tracks">{m.name}</span>
+                  </span>
+                  <span className={`change ${m.change_pct >= 0 ? "up" : "down"}`}>{formatPct(m.change_pct)}</span>
+                  {pre && (
+                    <span className="briefing-move-pre">
+                      7am <span className={`change ${pre.change_pct >= 0 ? "up" : "down"}`}>{formatPct(pre.change_pct)}</span>
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {briefing.overview && <p className="briefing-overview">{briefing.overview}</p>}
       </div>
 
@@ -191,7 +227,8 @@ export function MarketBriefing({ fallback }: Props) {
       )}
 
       <div className="briefing-foot">
-        Closing levels from FRED and Nasdaq · news via CNBC, Investing.com and Seeking Alpha
+        Updates at 7:00 and 9:40 AM ET on trading days · SPY/QQQ/DIA quotes via Nasdaq (delayed) · prior
+        closes from FRED and Nasdaq · news via CNBC, Investing.com and Seeking Alpha
         {briefing.model && briefing.model !== "template" && ` · written by ${briefing.model}`}{" "}
         {briefing.generatedAt && `· updated ${formatRelativeTime(briefing.generatedAt)}`}.
         Informational only — not investment advice.

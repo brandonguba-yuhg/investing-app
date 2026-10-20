@@ -194,6 +194,30 @@ export interface BriefingPayload {
   };
   drivers: Array<{ title: string; detail: string; source_url: string }>;
   ahead: Array<{ when: string; event: string; why: string }>;
+  /**
+   * Which edition this is. "premarket" (7:00am ET) and "open" (9:40am ET) are
+   * the morning briefings; "recap" is the after-close fallback used on a cold
+   * start before the day's first edition. Absent on older briefs = recap.
+   */
+  edition?: BriefingEdition;
+  /** YYYY-MM-DD the briefing is for. Morning editions: today. Recap: session_date. */
+  brief_date?: string;
+  /** Today's moves (SPY/QQQ/DIA) as of this edition. */
+  moves?: MarketMove[];
+  /** On the "open" edition: the 7am pre-market moves, to show any flip in direction. */
+  premarket_moves?: MarketMove[];
+}
+
+export type BriefingEdition = "premarket" | "open" | "recap";
+
+/** An index ETF's move vs the previous close, from Nasdaq.com's delayed quotes. */
+export interface MarketMove {
+  symbol: string;      // SPY, QQQ, DIA
+  name: string;        // the index it tracks
+  price: number;
+  change_pct: number;
+  as_of: string;       // Nasdaq's timestamp text, e.g. "Oct 21, 2026 9:38 AM ET"
+  source_url: string;
 }
 
 export interface MarketBriefing {

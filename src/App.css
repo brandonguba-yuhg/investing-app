@@ -2098,6 +2098,37 @@ body, html, #root {
   color: var(--muted);
 }
 
+.briefing-moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+
+.briefing-move {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.briefing-move-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.briefing-move-tracks,
+.briefing-move-pre {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .briefing-item-link {
   margin-top: auto;
   padding-top: 12px;
