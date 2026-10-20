@@ -429,13 +429,17 @@ export async function generateMorningBriefing(
   };
 }
 
-/** The edition due at `at`, or null outside the morning window / on non-trading days. */
+/**
+ * The edition due at `at`, or null outside 7:00am-4:00pm ET on trading days.
+ * After the close an opening edition can't be built (quotes are after-hours),
+ * so the day's last edition simply stays up until the next morning.
+ */
 export function dueEdition(
   at: Date,
   isTradingDay: (d: string) => boolean,
 ): { edition: MorningEdition; today: string } | null {
   const { date, minutes } = etParts(at);
-  if (!isTradingDay(date)) return null;
+  if (!isTradingDay(date) || minutes >= 16 * 60) return null;
   if (minutes >= 9 * 60 + 40) return { edition: "open", today: date };
   if (minutes >= 7 * 60) return { edition: "premarket", today: date };
   return null;
