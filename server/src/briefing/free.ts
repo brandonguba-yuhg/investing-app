@@ -16,7 +16,7 @@
 // fetched, so FABRICATED_CITATION still catches any URL the writer invents.
 
 import { getUpcomingMacroEvents } from "../macroEvents.js";
-import { etParts } from "./calendar.js";
+import { etParts, previousTradingDay } from "./calendar.js";
 import type { BriefingPayload, GenerationResult, Level } from "./types.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
@@ -152,6 +152,64 @@ async function nasdaqLiveClose(symbol: string, session: string, url: string): Pr
   };
 }
 
+/**
+ * CNBC's public quote endpoint. No key, no rate limit we've hit. Carries the
+ * prior session's close in `previous_day_closing` during/before trading hours,
+ * or today's close in `last` after the close. The bellwether SPX/DJI are not
+ * on Nasdaq.com (competitor indexes) and FRED's SP500 series routinely goes a
+ * full business day before publishing — this is the reliable fallback that
+ * keeps the morning brief from waiting all morning for FRED to catch up.
+ *
+ * We don't get the requested session's own change_pct for the prior-day branch
+ * (CNBC reports today's move, not the historical one). Returning change_pct
+ * null is fine — the gate's IMPLAUSIBLE_MOVE check skips null (same treatment
+ * VIX and 10Y already get) and the brief's prose uses today's ETF moves for
+ * direction anyway.
+ */
+async function cnbcLevel(cnbcSymbol: string, session: string, url: string): Promise<FetchedLevel | null> {
+  const body = JSON.parse(
+    await fetchText(
+      `https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${cnbcSymbol}&requestMethod=itv&noform=1&partnerId=2&output=json`,
+    ),
+  ) as {
+    FormattedQuoteResult?: {
+      FormattedQuote?: Array<{
+        last?: string;
+        last_time?: string;         // ISO-8601 with offset, e.g. "2026-11-04T09:53:26.000-0500"
+        change_pct?: string;        // today's move, e.g. "+1.66%"
+        previous_day_closing?: string;
+        curmktstatus?: string;      // "REG_MKT" | "PRE_MKT" | "AFT_MKT" | "CLOSED" | ...
+      }>;
+    };
+  };
+  const q = body.FormattedQuoteResult?.FormattedQuote?.[0];
+  if (!q?.last_time) return null;
+  const nowDate = q.last_time.slice(0, 10); // ET date derived from last_time's offset
+  const status = q.curmktstatus ?? "";
+
+  // After the close: `last` is today's close, `change_pct` is today's move.
+  if (session === nowDate && /CLOSED|AFT_MKT/i.test(status)) {
+    const value = Number((q.last ?? "").replace(/,/g, ""));
+    const pct = Number((q.change_pct ?? "").replace(/[%+]/g, ""));
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return {
+      level: { value: round(value, 2), change_pct: Number.isFinite(pct) ? round(pct, 2) : null, source_url: url },
+      date: session,
+    };
+  }
+
+  // During/before today's session: `previous_day_closing` is the prior session.
+  if (session === previousTradingDay(nowDate)) {
+    const value = Number((q.previous_day_closing ?? "").replace(/,/g, ""));
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return {
+      level: { value: round(value, 2), change_pct: null, source_url: url },
+      date: session,
+    };
+  }
+  return null;
+}
+
 interface LevelSource {
   key: keyof BriefingPayload["levels"];
   /** Tried in order; first one that has the session's close wins. */
@@ -164,18 +222,34 @@ const fred = (series: string) => {
 };
 
 const NDX_URL = "https://www.nasdaq.com/market-activity/index/ndx/historical";
+const CNBC_SPX_URL = "https://www.cnbc.com/quotes/.SPX";
+const CNBC_DJI_URL = "https://www.cnbc.com/quotes/.DJI";
+const CNBC_NDX_URL = "https://www.cnbc.com/quotes/.NDX";
 
 const LEVEL_SOURCES: LevelSource[] = [
-  { key: "spx", tries: [fred("SP500")] },
+  {
+    key: "spx",
+    tries: [
+      { url: CNBC_SPX_URL, load: (s) => cnbcLevel(".SPX", s, CNBC_SPX_URL) },
+      fred("SP500"),
+    ],
+  },
   {
     key: "ndx",
     tries: [
       { url: NDX_URL, load: async (s) => levelFor(await nasdaqCloses("NDX", s), s, NDX_URL) },
       { url: NDX_URL, load: (s) => nasdaqLiveClose("NDX", s, NDX_URL) },
+      { url: CNBC_NDX_URL, load: (s) => cnbcLevel(".NDX", s, CNBC_NDX_URL) },
       fred("NASDAQ100"),
     ],
   },
-  { key: "dji", tries: [fred("DJIA")] },
+  {
+    key: "dji",
+    tries: [
+      { url: CNBC_DJI_URL, load: (s) => cnbcLevel(".DJI", s, CNBC_DJI_URL) },
+      fred("DJIA"),
+    ],
+  },
   { key: "vix", tries: [fred("VIXCLS")] },
   { key: "ust10y", tries: [fred("DGS10")] },
 ];
