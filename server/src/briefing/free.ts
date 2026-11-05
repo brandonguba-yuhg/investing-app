@@ -175,20 +175,28 @@ async function cnbcLevel(cnbcSymbol: string, session: string, url: string): Prom
     FormattedQuoteResult?: {
       FormattedQuote?: Array<{
         last?: string;
-        last_time?: string;         // ISO-8601 with offset, e.g. "2026-11-04T09:53:26.000-0500"
-        change_pct?: string;        // today's move, e.g. "+1.66%"
+        last_time?: string;         // ISO-8601 with offset, e.g. "2026-11-04T16:00:00.000-0500"
+        change_pct?: string;        // the move captured at last_time
         previous_day_closing?: string;
-        curmktstatus?: string;      // "REG_MKT" | "PRE_MKT" | "AFT_MKT" | "CLOSED" | ...
       }>;
     };
   };
   const q = body.FormattedQuoteResult?.FormattedQuote?.[0];
   if (!q?.last_time) return null;
-  const nowDate = q.last_time.slice(0, 10); // ET date derived from last_time's offset
-  const status = q.curmktstatus ?? "";
 
-  // After the close: `last` is today's close, `change_pct` is today's move.
-  if (session === nowDate && /CLOSED|AFT_MKT/i.test(status)) {
+  // Parse the trade time in its declared ET offset. Indexes don't trade outside
+  // regular hours, so for .SPX/.DJI/.NDX the last_time stays pinned to the most
+  // recent 4:00pm ET close from 4pm one day until 9:30am the next trading day.
+  const m = q.last_time.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const tradeDate = `${m[1]}-${m[2]}-${m[3]}`;
+  const tradeMinutes = Number(m[4]) * 60 + Number(m[5]);
+
+  // If CNBC's last trade on this index is at/after 4pm ET on the session we
+  // want, `last` is that session's close — regardless of curmktstatus, which
+  // mirrors the ETF market state and can read PRE_MKT overnight even while
+  // the index itself hasn't moved since the prior close.
+  if (tradeDate === session && tradeMinutes >= 16 * 60) {
     const value = Number((q.last ?? "").replace(/,/g, ""));
     const pct = Number((q.change_pct ?? "").replace(/[%+]/g, ""));
     if (!Number.isFinite(value) || value <= 0) return null;
@@ -198,8 +206,11 @@ async function cnbcLevel(cnbcSymbol: string, session: string, url: string): Prom
     };
   }
 
-  // During/before today's session: `previous_day_closing` is the prior session.
-  if (session === previousTradingDay(nowDate)) {
+  // Otherwise, if we're asking about the trading day before CNBC's current one,
+  // `previous_day_closing` has it. We don't get change_pct for that session
+  // from this endpoint — null is fine (gate skips the plausibility check on
+  // null, same treatment vix/ust10y already get).
+  if (session === previousTradingDay(tradeDate)) {
     const value = Number((q.previous_day_closing ?? "").replace(/,/g, ""));
     if (!Number.isFinite(value) || value <= 0) return null;
     return {

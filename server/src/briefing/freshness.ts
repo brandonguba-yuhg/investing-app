@@ -186,8 +186,13 @@ export function assertFreshness(input: FreshnessInput): FreshnessOutcome {
   }
 
   // GATE 7 — continuity against the last accepted brief. Catches both a level that
-  // teleported and a level that didn't move at all (a copied row).
-  if (previous?.payload?.levels) {
+  // teleported and a level that didn't move at all (a copied row). Only applies
+  // across different sessions: morning editions (premarket + open) can both
+  // describe the SAME prior session, and their levels are *supposed* to match
+  // each other exactly — skipping the check when session_date is unchanged keeps
+  // FROZEN_LEVEL firing for its real purpose (next session's brief silently
+  // reusing this session's close) without misfiring on legitimate re-reports.
+  if (previous?.payload?.levels && previous.session_date !== p.session_date) {
     for (const key of ["spx", "ndx", "dji"] as const) {
       const now = p.levels[key]?.value;
       const then = previous.payload.levels[key]?.value;

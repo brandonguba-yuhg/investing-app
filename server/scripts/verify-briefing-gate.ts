@@ -69,6 +69,11 @@ check("single domain rejected",
   codes(assertFreshness({ result: mk({ ...good, levels: { ...good.levels, dji: { ...good.levels.dji, source_url: urls[0] } }, drivers: [{ ...good.drivers[0], source_url: urls[0] }] }), expectedSession: "2026-08-11" })).includes("SOURCE_DIVERSITY"));
 check("frozen level rejected",
   codes(assertFreshness({ result: mk({ ...good, levels: { ...good.levels, spx: { ...good.levels.spx, value: 7753.11 } } }), expectedSession: "2026-08-11", previous: prev })).includes("FROZEN_LEVEL"));
+// Morning editions (premarket + open) both describe the SAME prior session —
+// their levels are *supposed* to match. FROZEN_LEVEL must not misfire there.
+const samePrev: StoredBriefing = { ...prev, session_date: "2026-08-11", payload: { ...good } as any };
+check("same-session identical levels allowed",
+  !codes(assertFreshness({ result: mk(good), expectedSession: "2026-08-11", previous: samePrev })).includes("FROZEN_LEVEL"));
 check("teleported level rejected",
   codes(assertFreshness({ result: mk({ ...good, levels: { ...good.levels, spx: { ...good.levels.spx, value: 6100.00 } } }), expectedSession: "2026-08-11", previous: prev })).includes("LEVEL_DISCONTINUITY"));
 check("unbacked prose number rejected",
